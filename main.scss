@@ -1,0 +1,158 @@
+$bgColor: #eee;
+$borderRadius: 2px;
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box
+}
+
+body {
+  min-height: 100vh;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+form {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  width: 100%;
+  max-width: 500px;
+  padding: 50px;
+  gap: 20px;
+  background-color: $bgColor;
+  border-radius: $borderRadius;
+  align-items: start;
+}
+
+.wide {
+  grid-column: span 2;
+}
+
+$fieldPadding: 10px;
+$fieldLabelWidth: calc(100% - #{2 * $fieldPadding});
+$fieldLabelHorizontalPadding: 5px;
+$fieldLabelHorizontalMargin: $fieldPadding - $fieldLabelHorizontalPadding;
+
+.field {
+  position: relative;
+  font-size: 15px;
+  font-family: arial;
+  min-width: 0;
+}
+
+.field__label,
+.field__input,
+.field__selectedsOptions {
+  border: 1px solid #ccc;
+}
+
+.field__input,
+.field__selectedsOptions {
+  background-color: $bgColor;
+  border-radius: $borderRadius;
+  width: 100%;
+  margin: 0;
+  padding: $fieldPadding;
+  color: #333;
+  outline: none;
+}
+
+.field__label {
+  position: absolute;
+  border-color: transparent;
+  margin: 0 $fieldLabelHorizontalMargin;
+  padding: $fieldPadding $fieldLabelHorizontalPadding;
+  max-width: $fieldLabelWidth;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #666;
+  pointer-events: none;
+
+  transition-property: transform, font-size, padding, background-color;
+  transition-duration: 100ms;
+}
+
+.field__selectedsOptions {
+  cursor: pointer;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  user-select: none;
+}
+
+.field__options {
+  display: none;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  width: 100%;
+  z-index: 10;
+  background-color: $bgColor;
+  border-radius: $borderRadius;
+  border: 1px solid #666;
+  border-top: 0;
+  box-shadow: 0 0 4px rgba(#000, 0.4);
+  padding: 3px;
+}
+
+.field__option {
+  border-radius: 4px;
+  text-align: left;
+  background-color: transparent;
+  padding: $fieldPadding - 3px;
+  border: 3px solid $bgColor;
+  cursor: pointer;
+}
+
+.field__option.isSelected{
+  background-color: rgba(#000, 0.1);
+  &::before {
+    content: "✓ ";
+    line-height: 0;
+    vertical-align: baseline;
+  }
+}
+
+.field__options.isNavigating .field__option.isActive,
+.field__options.isNotNavigating .field__option:hover {
+  background-color: rgba(#000, 0.2);
+}
+
+.field.isFocus {
+  .field__label {
+    opacity: 0.7;
+  }
+
+  .field__input,
+  .field__selectedsOptions  {
+    outline: auto;
+  }
+}
+
+.field.isOpen {
+  .field__options {
+    display: block;
+  }
+}
+
+.field.isFiled {
+  .field__label {
+    transform: translateY(-50%);
+    background-color: $bgColor;
+    padding-top: 0;
+    padding-bottom: 0;
+    font-size: 12px;
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+.field.initialized {
+  select.field__input {
+    display: none;
+  }
+}
