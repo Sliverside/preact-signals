@@ -45,12 +45,12 @@ $fieldLabelHorizontalMargin: $fieldPadding - $fieldLabelHorizontalPadding;
 
 .field__label,
 .field__input,
-.field__selectedsOptions {
+.field__selected {
   border: 1px solid #ccc;
 }
 
 .field__input,
-.field__selectedsOptions {
+.field__selected {
   background-color: $bgColor;
   border-radius: $borderRadius;
   width: 100%;
@@ -76,7 +76,7 @@ $fieldLabelHorizontalMargin: $fieldPadding - $fieldLabelHorizontalPadding;
   transition-duration: 100ms;
 }
 
-.field__selectedsOptions {
+.field__selected {
   cursor: pointer;
   overflow: hidden;
   white-space: nowrap;
@@ -128,7 +128,7 @@ $fieldLabelHorizontalMargin: $fieldPadding - $fieldLabelHorizontalPadding;
   }
 
   .field__input,
-  .field__selectedsOptions  {
+  .field__selected {
     outline: auto;
   }
 }
