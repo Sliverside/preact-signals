@@ -1,6 +1,9 @@
 import { BaseField } from "./BaseField";
 
 export function TextField (container) {
+
+    if(!(this instanceof TextField)) throw new Error("TextField must be called using 'new' keyword")
+
     this.baseField = undefined
     this.input = undefined
 
@@ -13,7 +16,7 @@ export function TextField (container) {
         ) {
             throw new Error("the container should contains a 'input.field__input' element with a type not equal to radio or checkbox")
         }
-        
+
         this.baseField = new BaseField(container)
 
         this.baseField.container.addEventListener('pointerdown', e => {

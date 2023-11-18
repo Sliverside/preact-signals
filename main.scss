@@ -8,7 +8,7 @@ $borderRadius: 2px;
 }
 
 body {
-  min-height: 100vh;
+  min-height: 200vh;
   margin: 0;
   display: flex;
   align-items: center;
@@ -87,9 +87,12 @@ $fieldLabelHorizontalMargin: $fieldPadding - $fieldLabelHorizontalPadding;
 .field__options {
   display: none;
   position: absolute;
-  top: 100%;
+  top: 0;
   left: 0;
-  width: 100%;
+  width: max-content;
+  min-width: 100%;
+  height: 300px;
+  overflow: auto;
   z-index: 10;
   background-color: $bgColor;
   border-radius: $borderRadius;
@@ -97,6 +100,8 @@ $fieldLabelHorizontalMargin: $fieldPadding - $fieldLabelHorizontalPadding;
   border-top: 0;
   box-shadow: 0 0 4px rgba(#000, 0.4);
   padding: 3px;
+  scrollbar-color: rgba(#000, 0.2) rgba(#000, 0.1);
+  scrollbar-width: thin;
 }
 
 .field__option {
@@ -106,14 +111,15 @@ $fieldLabelHorizontalMargin: $fieldPadding - $fieldLabelHorizontalPadding;
   padding: $fieldPadding - 3px;
   border: 3px solid $bgColor;
   cursor: pointer;
+  padding-right: 2em;
 }
 
 .field__option.isSelected{
   background-color: rgba(#000, 0.1);
-  &::before {
-    content: "✓ ";
-    line-height: 0;
-    vertical-align: baseline;
+  &::after {
+    position: absolute;
+    right: 0.8em;
+    content: "✓";
   }
 }
 

@@ -1,4 +1,4 @@
-function wrapElement(element, wrapper) {
+export function wrapElement(element, wrapper) {
   if (!isNode(wrapper) || !isNode(element)) return false;
 
   const nextEl = element.nextElementSibling;
@@ -12,14 +12,14 @@ function wrapElement(element, wrapper) {
   else parent.appendChild(wrapper);
 }
 
-function isNode(o) {
+export function isNode(o) {
   return (
     typeof Node === "object" ? o instanceof Node :
       o && typeof o === "object" && typeof o.nodeType === "number" && typeof o.nodeName === "string"
   );
 }
 
-function isElement(o) {
+export function isElement(o) {
   return (
     typeof HTMLElement === "object" ? o instanceof HTMLElement : //DOM2
       o && typeof o === "object" && o !== null && o.nodeType === 1 && typeof o.nodeName === "string"
@@ -33,7 +33,7 @@ function isElement(o) {
  * @param {Object} options.properties
  * @param {HTMLElement|string[]} options.children
  */
-function createElement(tag, options) {
+export function createElement(tag, options) {
   let el = document.createElement(tag);
 
   if (options.classList)
@@ -59,9 +59,18 @@ function createElement(tag, options) {
   return el;
 }
 
-export {
-  wrapElement,
-  isNode,
-  isElement,
-  createElement
-};
+export function debounce(callback, delay){
+  var timer;
+  return function(){
+      var args = arguments;
+      var context = this;
+      clearTimeout(timer);
+      timer = setTimeout(function(){
+          callback.apply(context, args);
+      }, delay)
+  }
+}
+
+export function removeDiacritics(string) {
+  return string.normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+}

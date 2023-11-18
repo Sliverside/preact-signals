@@ -1,6 +1,9 @@
 import { computed, signal, effect } from "@preact/signals-core"
 
 export function BaseField (container) {
+
+    if(!(this instanceof BaseField)) throw new Error("BaseField must be called using 'new' keyword")
+
     this.container = undefined
     this.label = undefined
     this.value = undefined
