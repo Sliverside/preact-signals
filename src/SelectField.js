@@ -1,41 +1,67 @@
-import { signal, effect, computed, untracked } from "@preact/signals-core";
-import { computePosition, flip, size, autoUpdate } from "@floating-ui/dom"
 import { BaseField } from "./BaseField";
-import { createElement, removeDiacritics } from "./helpers";
+import { createElement, removeDiacritics, extend } from "./helpers";
+import { Observable, Computed } from "./Observable";
+import { Floater } from "./Floater";
 
-export function SelectField(container) {
+export function SelectField(container, config) {
 
-    if (!(this instanceof SelectField)) throw new Error("SelectField must be called using 'new' keyword")
+    if (!(this instanceof SelectField)) {
+        throw new Error("SelectField must be called using 'new' keyword")
+    }
 
+    if(!(container instanceof HTMLElement)) {
+        throw new Error("container should be an HTMLElement")
+    }
+
+    this.defaultConfig = {
+        searchable: false
+    }
+
+    this.config = undefined
     this.container = undefined
     this.baseField = undefined
     this.select = undefined
     this.options = undefined
+    this.filtredOptionsIndexes = undefined
+    this.filtredOptions = undefined
     this.isOpen = undefined
     this.navIndex = undefined
     this.isNavigating = undefined
     this.optionsElements = {}
     this.selectedDisplay = undefined
+    this.dropdown = undefined
     this.optionsContainer = undefined
     this.typedTextTimoutId = undefined
     this.lastTypedText = ""
+    this.searchInput = undefined
 
     this.init = function () {
+        // Merge defaults with user set config
+        this.config = extend(this.defaultConfig, config);
         this.container = container
         this.select = this.container.querySelector('select.field__input')
+
+        if(this.container.dataset.searchable && (!config || typeof config.searchable === 'undefined')) {
+            this.config.searchable = true
+        }
 
         if (!(this.select instanceof HTMLSelectElement)) {
             throw new Error("the container should contains a 'input.field__input' element with a type not equal to radio or checkbox")
         }
 
         this.baseField = new BaseField(this.container)
-        this.baseField.value = []
-        this.isOpen = signal(false)
-        this.navIndex = signal(0)
-        this.isNavigating = signal(true)
-        this.options = signal([])
+        this.baseField.value.set([])
+        this.isOpen = new Observable(false)
+        this.navIndex = new Observable(0)
+        this.isNavigating = new Observable(true)
+        this.options = new Observable([])
+        this.filtredOptionsIndexes = new Observable(null)
+        this.filtredOptions = new Computed(() => {
+            if(this.filtredOptionsIndexes.get() === null) return this.options.get()
+            return this.filtredOptionsIndexes.get().map(id => this.options.get()[id])
+        }, [this.filtredOptionsIndexes])
 
-        const optionsIds = computed(() => this.options.value.map(option => option.id))
+        const optionsIds = new Computed(() => this.options.get().map(option => option.id), [this.options])
         const nativeOptions = {}
 
         this.selectedDisplay = createElement('div', {
@@ -43,36 +69,51 @@ export function SelectField(container) {
             children: [' ']
         })
 
+        this.dropdown = createElement('div', {
+            classList: ['field__dropdown']
+        })
+        
         this.optionsContainer = createElement('div', {
             classList: ['field__options', this.select.multiple ? 'multiple' : 'simple']
         })
 
-        this.container.tabIndex = 0
+        this.baseField.addFocusableElement(this.selectedDisplay)
+        this.baseField.addFocusableElement(this.optionsContainer)
+        this.dropdownFloater = new Floater(this.container, this.dropdown)
 
-        this.container.addEventListener('focus', () => {
-            this.baseField.isFocus = true
-        }, false)
-
-        this.container.addEventListener('blur', () => {
-            this.baseField.isFocus = false
-            this.isOpen.value = false
-        }, false)
-
-        this.container.addEventListener('pointerdown', e => {
-            if (this.optionsContainer.contains(e.target)) return
-            this.baseField.isFocus = true
-            this.isOpen.value = !this.isOpen.value
-        }, false)
-
+        
         this.container.addEventListener('keydown', this.onKeydown)
 
-        const onOptionsContainerMouseMove = () => { this.isNavigating.value = false }
+        const onDocumentFocusin = e => {
+            if(this.container.contains(e.target) || !this.isOpen.get()) return
+            e.preventDefault()
+            this.baseField.focusElement(this.selectedDisplay)
 
+        }
+
+        this.baseField.isFocus.subscribe(isFocus => {
+            if(isFocus) document.addEventListener('focusin', onDocumentFocusin)
+            else document.removeEventListener('focusin', onDocumentFocusin)
+        })
+
+        this.baseField.focusedElement.subscribe(focusedElement => {
+            if(focusedElement === this.selectedDisplay) this.isOpen.set(false)
+        })
+
+        this.selectedDisplay.addEventListener('pointerdown', e => {
+            e.preventDefault()
+            this.isOpen.set(!this.isOpen.get())
+        })
+
+        const onOptionsContainerMouseMove = () => { this.isNavigating.set(false) }
+
+        onOptionsContainerMouseMove()
+        
         this.isNavigating.subscribe(value => {
             if (value) this.optionsContainer.addEventListener('mousemove', onOptionsContainerMouseMove, { passive: true })
             else this.optionsContainer.removeEventListener('mousemove', onOptionsContainerMouseMove)
-            this.optionsContainer.classList.toggle('isNavigating', this.isNavigating.value)
-            this.optionsContainer.classList.toggle('isNotNavigating', !this.isNavigating.value)
+            this.optionsContainer.classList.toggle('isNavigating', this.isNavigating.get())
+            this.optionsContainer.classList.toggle('isNotNavigating', !this.isNavigating.get())
         })
 
         const tempOptions = []
@@ -87,51 +128,52 @@ export function SelectField(container) {
             nativeOptions[option.id] = nativeOption
         }
 
-        this.options.value = tempOptions
+        this.options.set(tempOptions)
 
         this.container.appendChild(this.selectedDisplay)
-        this.container.appendChild(this.optionsContainer)
+        this.dropdown.appendChild(this.optionsContainer)
+        this.container.appendChild(this.dropdown)
         this.select.style.display = "none"
 
-        let autoUpdateCleanup
-
-        this.isOpen.subscribe(() => {
-            this.container.classList.toggle('isOpen', this.isOpen.value)
-
-            if (typeof autoUpdateCleanup === "function") {
-                autoUpdateCleanup()
-                autoUpdateCleanup = undefined
-            }
-
-            if (this.isOpen.value) {
-                autoUpdateCleanup = autoUpdate(
-                    this.container,
-                    this.optionsContainer,
-                    this.computeOptionsContainerPosition
-                )
-            }
+        this.baseField.isFocus.subscribe(() => {
+            if(!this.baseField.isFocus.get()) this.isOpen.set(false)
         })
 
-        effect(() => {
+        this.isOpen.subscribe(() => {
+            this.container.classList.toggle('isOpen', this.isOpen.get())
+            this.dropdownFloater.isVisible.set(this.isOpen.get())
+        if(this.isOpen.get()) {
+            if(this.config.searchable) this.baseField
+            this.baseField.focusElement(
+                this.config.searchable && this.searchInput
+                    ? this.searchInput
+                    : this.optionsContainer
+            )
+        }
+        })
+
+        this.baseField.value.subscribe(() => {
             const displayValue = this.renderSelectedDisplay()
             this.selectedDisplay.innerHTML = displayValue === "" ? "&nbsp;" : displayValue
             this.selectedDisplay.title = displayValue
         })
 
-        effect(() => {
+        optionsIds.subscribe(() => {
             this.optionsContainer.textContent = ""
-            for (let i = 0; i < optionsIds.value.length; i++) {
-                const optionId = optionsIds.value[i];
-                const optionElement = untracked(() => this.createOptionElement(optionId))
+            for (let i = 0; i < optionsIds.get().length; i++) {
+                const optionId = optionsIds.get()[i];
+                const optionElement = this.createOptionElement(optionId)
 
                 this.optionsContainer.appendChild(optionElement)
             }
         })
+
+        if(this.config.searchable) this.initSearchable()
     }
 
     this.createOptionElement = function (optionId) {
 
-        const option = this.options.value[optionId]
+        const option = this.options.get()[optionId]
 
         if (!option) return
 
@@ -142,28 +184,36 @@ export function SelectField(container) {
             children: [option.label],
         })
 
-        effect(() => {
-            const isSelected = this.baseField.value.includes(option.id)
+        this.baseField.value.subscribe(() => {
+            const isSelected = this.baseField.value.get().includes(option.id)
             optionElement.classList.toggle('isSelected', isSelected)
             if (isSelected && !this.select.multiple) this.scrolloptionElementIntoView(optionElement)
         })
-        effect(() => {
-            const isActiveOption = this.select.multiple && option.id === this.navIndex.value
+
+        this.navIndex.subscribe(() => {
+            const isActiveOption = this.select.multiple && option.id === this.navIndex.get()
             optionElement.classList.toggle('isActive', isActiveOption)
 
             if (isActiveOption && this.select.multiple) this.scrolloptionElementIntoView(optionElement)
         })
 
+        this.filtredOptionsIndexes.subscribe(value => {
+            const isFiltredOption = value === null || value.includes(option.id)
+            optionElement.classList.toggle('hide', !isFiltredOption)
+        })
+
         optionElement.addEventListener('click', e => {
             e.preventDefault()
             this.toggleOption(option.id)
-            if (!this.select.multiple) this.isOpen.value = false
+            if (!this.select.multiple) {
+                this.baseField.focusElement(this.selectedDisplay)
+            }
         })
 
         return optionElement
     }
 
-    this.createOption = function ({ label, value, id, selected, nativeOption }) {
+    this.createOption = function ({ label, value, id }) {
         if (!id && typeof id !== "number") id = this.uid.get()
         if (typeof id !== "number" && typeof id !== "string") throw new Error('id must be a string, a number or a "falsy" value')
 
@@ -172,56 +222,69 @@ export function SelectField(container) {
 
     this.onKeydown = e => {
 
-        if (!this.isOpen.value && [" ", "Enter", "ArrowDown", "ArrowUp"].includes(e.key)) {
+        if (!this.isOpen.get() && [" ", "Enter", "ArrowDown", "ArrowUp"].includes(e.key)) {
             e.preventDefault()
-            this.isOpen.value = true
+            this.isOpen.set(true)
             return
-        } else if (this.isOpen.value && ["Escape", "Tab"].includes(e.key)) {
+        } else if (this.isOpen.get() && ["Escape"].includes(e.key)) {
             e.preventDefault()
-            this.isOpen.value = false
+            this.baseField.focusElement(this.selectedDisplay)
             return
         }
 
         if ([" ", "Enter"].includes(e.key)) {
             e.preventDefault()
-            if (this.select.multiple) {
-                this.toggleOption(this.navIndex.value)
+            if(this.select.multiple) {
+                this.toggleOption(this.navIndex.get())
             } else {
-                this.isOpen.value = false
+                this.baseField.focusElement(this.selectedDisplay)
             }
         } else if (["ArrowDown", "ArrowUp"].includes(e.key)) {
             e.preventDefault()
-            this.isNavigating.value = true
+            this.isNavigating.set(true)
 
             let currentIndex = undefined
+            let optionsLength = this.options.get().length
 
-            currentIndex = this.baseField.value[this.baseField.value.length - 1]
+            currentIndex = this.baseField.value.get()[this.baseField.value.get().length - 1]
 
-            if (this.select.multiple) currentIndex = this.navIndex.value
+            if (this.select.multiple) currentIndex = this.navIndex.get()
+
+            if(this.filtredOptionsIndexes.get() !== null) {
+                currentIndex = this.filtredOptionsIndexes.get().indexOf(currentIndex)
+                optionsLength = this.filtredOptionsIndexes.get().length
+            }
 
             if (typeof currentIndex === "undefined") {
                 currentIndex = 0
             } else {
                 if (e.key === "ArrowUp") currentIndex--
                 else if (e.key === "ArrowDown") currentIndex++
-                if (currentIndex < 0) currentIndex = this.select.options.length - 1
-                else if (currentIndex > this.select.options.length - 1) currentIndex = 0
+                if (currentIndex < 0) currentIndex = optionsLength - 1
+                else if (currentIndex > optionsLength - 1) currentIndex = 0
             }
 
-            if (this.select.multiple) this.navIndex.value = currentIndex
-            else this.selectOption(currentIndex)
+            let realIndex = this.filtredOptionsIndexes.get() === null
+                ? currentIndex
+                : this.filtredOptionsIndexes.get()[currentIndex]
+
+            if (this.select.multiple) this.navIndex.set(realIndex)
+            else this.selectOption(realIndex)
         } else if (e.key.length === 1) {
+            // e.key.length === 1 : on verifie que le charactère est imprimable (ignore esc, tab, vermaj, maj, f1, f2...)
 
-            if(this.select.multiple) this.isOpen.value = true
+            if(this.searchInput && this.baseField.focusedElement.get() === this.searchInput) return
 
-            this.isNavigating.value = true
+            if(this.select.multiple) this.isOpen.set(true)
+
+            this.isNavigating.set(true)
             this.lastTypedText += e.key
 
             const findedOption = this.findFirstMatchingOption(this.lastTypedText)
 
-            if (findedOption && typeof findedOption.index === "number") {
-                if (this.select.multiple) this.navIndex.value = findedOption.index
-                else this.selectOption(findedOption.index)
+            if (findedOption && typeof findedOption.id === "number") {
+                if (this.select.multiple) this.navIndex.set(findedOption.id)
+                else this.selectOption(findedOption.id)
             }
 
             if (this.typedTextTimoutId) {
@@ -232,19 +295,38 @@ export function SelectField(container) {
             this.typedTextTimoutId = setTimeout(() => {
                 this.lastTypedText = ""
             }, 700);
+
         }
     }
 
-    this.findFirstMatchingOption = function (query) {
+    this.findMatchingOptions = function (query, options, first) {
         query = removeDiacritics(query.trim().toLowerCase())
-        const length = query.length
-        for (let i = 0; i < this.options.value.length; i++) {
-            const option = this.options.value[i];
-            const valueToCompare = removeDiacritics(option.label.trim().substring(0, length).toLowerCase())
-            if (valueToCompare === query) return { option, index: i }
+        const finded = []
+        for (let i = 0; i < options.length; i++) {
+            const option = options[i];
+            const valueToCompare = removeDiacritics(option.label.trim().substring(0, query.length).toLowerCase())
+            if (valueToCompare === query) {
+                const result = option
+                if(first) return result
+                finded.push(result) 
+            }
         }
 
-        return null
+        if(first) return null
+        return finded
+    }
+
+    this.findFirstMatchingOption = function (query) {
+        return this.findMatchingOptions(query, this.filtredOptions.get(), true)
+    }
+
+    this.filterOptions = function (query) {
+        if(query.trim() === '') {
+            this.filtredOptionsIndexes.set(null)
+            return
+        }
+        const finded = this.findMatchingOptions(query, this.options.get())
+        this.filtredOptionsIndexes.set(finded.map(option => option.id))
     }
 
     this.scrolloptionElementIntoView = function (optionElement) {
@@ -259,54 +341,43 @@ export function SelectField(container) {
     }
 
     this.toggleOption = function (id) {
-        if (this.baseField.value.includes(id)) this.deselectOption(id)
+        if (this.baseField.value.get().includes(id)) this.deselectOption(id)
         else this.selectOption(id)
     }
 
     this.selectOption = function (id) {
-        if (this.baseField.value.includes(id)) return
-        if (this.select.multiple) this.baseField.value = [...this.baseField.value, id]
-        else this.baseField.value = [id]
+        if (this.baseField.value.get().includes(id)) return
+        if (this.select.multiple) this.baseField.value.set([...this.baseField.value.get(), id])
+        else this.baseField.value.set([id])
     }
 
     this.deselectOption = function (id) {
-        if (!this.baseField.value.includes(id)) return
-        this.baseField.value = this.baseField.value.filter((value) => value !== id)
+        if (!this.baseField.value.get().includes(id)) return
+        this.baseField.value.set(this.baseField.value.get().filter((value) => value !== id))
     }
 
     this.renderSelectedDisplay = function () {
-        if (!this.baseField.value.length === 0) return ""
-        return this.baseField.value.reduce((acc, curr) => {
-            const option = this.options.value[curr]
+        if (!this.baseField.value.get().length === 0) return ""
+        return this.baseField.value.get().reduce((acc, curr) => {
+            const option = this.options.get()[curr]
             if (option) acc.push(option.label)
             return acc
         }, []).join(', ')
     }
 
-    this.computeOptionsContainerPosition = () => {
-        computePosition(this.container, this.optionsContainer, {
-            placement: 'bottom-start',
-            middleware: [
-                flip({
-                     padding: 10,
-                     crossAxis: false
-                    }),
-                size({
-                    padding: 10,
-                    apply({ availableWidth, availableHeight, elements }) {
-                        Object.assign(elements.floating.style, {
-                            maxWidth: `${availableWidth}px`,
-                            maxHeight: `${availableHeight}px`
-                        });
-                    }
-                })
-            ]
-        }).then(({ x, y }) => {
-            Object.assign(this.optionsContainer.style, {
-                left: `${x}px`,
-                top: `${y}px`,
-            });
+    this.initSearchable = function() {
+        this.searchInput = createElement('input', {
+            classList: ['field__search'],
         })
+        this.baseField.addFocusableElement(this.searchInput)
+        this.dropdown.prepend(this.searchInput)
+
+        const onInput = () => {
+            this.filterOptions(this.searchInput.value)
+        }
+
+        this.searchInput.addEventListener('change', onInput)
+        this.searchInput.addEventListener('input', onInput)
     }
 
     this.uid = (function () {

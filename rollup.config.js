@@ -1,6 +1,7 @@
 import { nodeResolve } from '@rollup/plugin-node-resolve'
 import { babel } from '@rollup/plugin-babel'
 import scss from 'rollup-plugin-scss'
+import terser from '@rollup/plugin-terser'
 
 export default [
   // {
@@ -21,7 +22,7 @@ export default [
     output: {
       file: 'dist/main2.js',
       format: 'iife',
-      name: 'components',
+      name: 'formComponents',
       sourcemap: true
     },
     plugins: [
@@ -30,7 +31,8 @@ export default [
       babel({
         babelHelpers: "bundled",
         presets: ['@babel/env']
-      })
+      }),
+      terser()
     ],
   }
 ]

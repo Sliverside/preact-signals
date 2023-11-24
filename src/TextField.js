@@ -2,6 +2,14 @@ import { BaseField } from "./BaseField";
 
 export function TextField (container) {
 
+    if(!(this instanceof TextField)) {
+        throw new Error("TextField must be called using 'new' keyword")
+    }
+
+    if(!(container instanceof HTMLElement)) {
+        throw new Error("container should be an HTMLElement")
+    }
+
     if(!(this instanceof TextField)) throw new Error("TextField must be called using 'new' keyword")
 
     this.baseField = undefined
@@ -19,39 +27,15 @@ export function TextField (container) {
 
         this.baseField = new BaseField(container)
 
-        this.baseField.container.addEventListener('pointerdown', e => {
-            e.stopPropagation()
-            this.focus()
-        })
-
-        this.baseField.container.addEventListener('click', e => {
-            e.stopPropagation()
-        })
+        this.baseField.addFocusableElement(this.input)
 
         const onInput = () => {
-            this.baseField.value = this.input.value
+            this.baseField.value.set(this.input.value)
         }
 
         onInput()
         this.input.addEventListener('input', onInput)
         this.input.addEventListener('change', onInput)
-
-        this.input.addEventListener('focus', () => {
-            this.baseField.isFocus = true
-        }, false)
-        this.input.addEventListener('blur', () => {
-            this.baseField.isFocus = false
-        }, false)
-
-        if(this.baseField.label) {
-            // prevent blur when holding label
-            this.baseField.label.addEventListener('pointerdown', e => e.preventDefault())
-        }
-    }
-
-    this.focus = function() {
-        this.baseField.isFocus = true
-        this.input.focus()
     }
 
     this.init()

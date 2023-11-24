@@ -59,18 +59,39 @@ export function createElement(tag, options) {
   return el;
 }
 
-export function debounce(callback, delay){
+export function debounce(callback, delay) {
   var timer;
-  return function(){
-      var args = arguments;
-      var context = this;
-      clearTimeout(timer);
-      timer = setTimeout(function(){
-          callback.apply(context, args);
-      }, delay)
+  return function () {
+    var args = arguments;
+    var context = this;
+    clearTimeout(timer);
+    timer = setTimeout(function () {
+      callback.apply(context, args);
+    }, delay)
   }
 }
 
 export function removeDiacritics(string) {
   return string.normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+}
+
+export function extend(src, props) {
+  for (var prop in props) {
+    if (props.hasOwnProperty(prop)) {
+      var val = props[prop];
+      if (val && Object.prototype.toString.call(val) === "[object Object]") {
+        src[prop] = src[prop] || {};
+        extend(src[prop], val);
+      } else {
+        src[prop] = val;
+      }
+    }
+  }
+  return src;
+}
+
+export function isHidden (node) {
+  // offsetParent being null will allow detecting cases where an element is invisible or inside an invisible element,
+  // as long as the element does not use position: fixed. For them, their visibility has to be checked directly as well.
+  return node.offsetParent === null || getComputedStyle(node).visibility === 'hidden'
 }
