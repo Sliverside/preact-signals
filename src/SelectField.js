@@ -41,12 +41,12 @@ export function SelectField(container, config) {
         this.container = container
         this.select = this.container.querySelector('select.field__input')
 
-        if(this.container.dataset.searchable && (!config || typeof config.searchable === 'undefined')) {
-            this.config.searchable = true
-        }
-
         if (!(this.select instanceof HTMLSelectElement)) {
             throw new Error("the container should contains a 'input.field__input' element with a type not equal to radio or checkbox")
+        }
+
+        if(this.container.dataset.searchable && (!config || typeof config.searchable === 'undefined')) {
+            this.config.searchable = true
         }
 
         this.baseField = new BaseField(this.container)
@@ -72,46 +72,35 @@ export function SelectField(container, config) {
         this.dropdown = createElement('div', {
             classList: ['field__dropdown']
         })
-        
+
         this.optionsContainer = createElement('div', {
             classList: ['field__options', this.select.multiple ? 'multiple' : 'simple']
         })
 
-        this.baseField.addFocusableElement(this.selectedDisplay)
-        this.baseField.addFocusableElement(this.optionsContainer)
+        this.selectedDisplay.tabIndex = 0
+        if(!this.config.searchable) this.optionsContainer.tabIndex = 0
         this.dropdownFloater = new Floater(this.container, this.dropdown)
 
-        
         this.container.addEventListener('keydown', this.onKeydown)
-
-        const onDocumentFocusin = e => {
-            if(this.container.contains(e.target) || !this.isOpen.get()) return
-            e.preventDefault()
-            this.baseField.focusElement(this.selectedDisplay)
-
-        }
-
-        this.baseField.isFocus.subscribe(isFocus => {
-            if(isFocus) document.addEventListener('focusin', onDocumentFocusin)
-            else document.removeEventListener('focusin', onDocumentFocusin)
-        })
 
         this.baseField.focusedElement.subscribe(focusedElement => {
             if(focusedElement === this.selectedDisplay) this.isOpen.set(false)
         })
 
         this.selectedDisplay.addEventListener('pointerdown', e => {
-            e.preventDefault()
-            this.isOpen.set(!this.isOpen.get())
+            if(e.target === this.selectedDisplay) {
+                e.preventDefault()
+                this.isOpen.set(!this.isOpen.get())
+            }
         })
 
-        const onOptionsContainerMouseMove = () => { this.isNavigating.set(false) }
+        const onOptionsContainerPointermove = () => { this.isNavigating.set(false) }
 
-        onOptionsContainerMouseMove()
-        
+        onOptionsContainerPointermove()
+
         this.isNavigating.subscribe(value => {
-            if (value) this.optionsContainer.addEventListener('mousemove', onOptionsContainerMouseMove, { passive: true })
-            else this.optionsContainer.removeEventListener('mousemove', onOptionsContainerMouseMove)
+            if (value) this.optionsContainer.addEventListener('pointermove', onOptionsContainerPointermove, { passive: true })
+            else this.optionsContainer.removeEventListener('pointermove', onOptionsContainerPointermove)
             this.optionsContainer.classList.toggle('isNavigating', this.isNavigating.get())
             this.optionsContainer.classList.toggle('isNotNavigating', !this.isNavigating.get())
         })
@@ -134,6 +123,8 @@ export function SelectField(container, config) {
         this.dropdown.appendChild(this.optionsContainer)
         this.container.appendChild(this.dropdown)
         this.select.style.display = "none"
+        this.select.tabIndex = -1
+        this.select.inert = true
 
         this.baseField.isFocus.subscribe(() => {
             if(!this.baseField.isFocus.get()) this.isOpen.set(false)
@@ -143,12 +134,8 @@ export function SelectField(container, config) {
             this.container.classList.toggle('isOpen', this.isOpen.get())
             this.dropdownFloater.isVisible.set(this.isOpen.get())
         if(this.isOpen.get()) {
-            if(this.config.searchable) this.baseField
-            this.baseField.focusElement(
-                this.config.searchable && this.searchInput
-                    ? this.searchInput
-                    : this.optionsContainer
-            )
+            const focusTarget = this.config.searchable ? this.searchInput : this.optionsContainer
+            focusTarget.focus()
         }
         })
 
@@ -205,9 +192,7 @@ export function SelectField(container, config) {
         optionElement.addEventListener('click', e => {
             e.preventDefault()
             this.toggleOption(option.id)
-            if (!this.select.multiple) {
-                this.baseField.focusElement(this.selectedDisplay)
-            }
+            if (!this.select.multiple) this.selectedDisplay.focus()
         })
 
         return optionElement
@@ -228,17 +213,14 @@ export function SelectField(container, config) {
             return
         } else if (this.isOpen.get() && ["Escape"].includes(e.key)) {
             e.preventDefault()
-            this.baseField.focusElement(this.selectedDisplay)
+            this.selectedDisplay.focus()
             return
         }
 
         if ([" ", "Enter"].includes(e.key)) {
             e.preventDefault()
-            if(this.select.multiple) {
-                this.toggleOption(this.navIndex.get())
-            } else {
-                this.baseField.focusElement(this.selectedDisplay)
-            }
+            if(this.select.multiple) this.toggleOption(this.navIndex.get())
+            else this.selectedDisplay.focus()
         } else if (["ArrowDown", "ArrowUp"].includes(e.key)) {
             e.preventDefault()
             this.isNavigating.set(true)
@@ -308,7 +290,7 @@ export function SelectField(container, config) {
             if (valueToCompare === query) {
                 const result = option
                 if(first) return result
-                finded.push(result) 
+                finded.push(result)
             }
         }
 
@@ -368,9 +350,14 @@ export function SelectField(container, config) {
     this.initSearchable = function() {
         this.searchInput = createElement('input', {
             classList: ['field__search'],
+            properties: { type: 'search' }
         })
-        this.baseField.addFocusableElement(this.searchInput)
         this.dropdown.prepend(this.searchInput)
+
+        this.optionsContainer.addEventListener('pointerdown', e => {
+            e.preventDefault()
+            e.stopPropagation()
+        })
 
         const onInput = () => {
             this.filterOptions(this.searchInput.value)

@@ -1,4 +1,5 @@
 import { Computed, Observable, readonly } from "./Observable"
+import { focusable } from "tabbable"
 
 export function BaseField (container) {
 
@@ -36,7 +37,15 @@ export function BaseField (container) {
 
         this.isFiled.subscribe(() => this.container.classList.toggle('isFiled', this.isFiled.get()))
         this.isFocus.subscribe(() => this.container.classList.toggle('isFocus', this.isFocus.get()))
-        
+
+        new Promise(() => {
+            setTimeout(() => {
+                focusable(container, { displayCheck: 'none' })
+                    .forEach(el => {
+                        this.addFocusableElement(el)
+                    })
+            }, 10)
+        })
     }
 
     this.addFocusableElement = function(element) {
@@ -51,7 +60,7 @@ export function BaseField (container) {
     this.focusElement = function(element) {
         if(this.focusableElements.indexOf(element) === -1) throw new Error('this element is not focusable, add it with addFocusableElement before focussing it')
         this.focusedElement.set(element)
-        element.focus()
+        if(document.activeElement !== element) element.focus()
     }
 
     this.blurElement = function(element) {
@@ -83,15 +92,7 @@ export function BaseField (container) {
             set() { throw new Error("isFocus is an Observable, use isFocus.set method") },
         },
         addFocusableElement: {
-            value: (element) => this.addFocusableElement(element),
-            writable: false
-        },
-        focusElement: {
-            value: element => this.focusElement(element),
-            writable: false
-        },
-        blurElement: {
-            value: element => this.blurElement(element),
+            value: (element) => true,
             writable: false
         },
         focusedElement: {
