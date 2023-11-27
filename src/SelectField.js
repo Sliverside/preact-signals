@@ -22,6 +22,7 @@ export function SelectField(container, config) {
     this.baseField = undefined
     this.select = undefined
     this.options = undefined
+    this.nativeOptions = undefined
     this.filtredOptionsIndexes = undefined
     this.filtredOptions = undefined
     this.isOpen = undefined
@@ -62,7 +63,7 @@ export function SelectField(container, config) {
         }, [this.filtredOptionsIndexes])
 
         const optionsIds = new Computed(() => this.options.get().map(option => option.id), [this.options])
-        const nativeOptions = {}
+        this.nativeOptions = {}
 
         this.selectedDisplay = createElement('div', {
             classList: ['field__selected'],
@@ -114,7 +115,7 @@ export function SelectField(container, config) {
             })
 
             tempOptions.push(option)
-            nativeOptions[option.id] = nativeOption
+            this.nativeOptions[option.id] = nativeOption
         }
 
         this.options.set(tempOptions)
@@ -124,7 +125,6 @@ export function SelectField(container, config) {
         this.container.appendChild(this.dropdown)
         this.select.style.display = "none"
         this.select.tabIndex = -1
-        this.select.inert = true
 
         this.baseField.isFocus.subscribe(() => {
             if(!this.baseField.isFocus.get()) this.isOpen.set(false)
@@ -143,6 +143,10 @@ export function SelectField(container, config) {
             const displayValue = this.renderSelectedDisplay()
             this.selectedDisplay.innerHTML = displayValue === "" ? "&nbsp;" : displayValue
             this.selectedDisplay.title = displayValue
+
+            if(this.baseField.value.get().length < 1) {
+                this.select.selectedIndex = -1
+            }
         })
 
         optionsIds.subscribe(() => {
@@ -171,9 +175,12 @@ export function SelectField(container, config) {
             children: [option.label],
         })
 
+        const nativeOption = this.nativeOptions[optionId]
+
         this.baseField.value.subscribe(() => {
             const isSelected = this.baseField.value.get().includes(option.id)
             optionElement.classList.toggle('isSelected', isSelected)
+            if(nativeOption) nativeOption.selected = isSelected
             if (isSelected && !this.select.multiple) this.scrolloptionElementIntoView(optionElement)
         })
 
