@@ -1,7 +1,7 @@
 export class Observable {
     _observed
     _listeners = new Set()
-    
+
     constructor(v) {
         this._observed = v
     }
@@ -30,25 +30,39 @@ export class Observable {
 }
 
 export class Computed {
-    
+
     _observable
     _timeoutId
-    
+    _compute
+
     constructor(compute, dependencies) {
-        this._observable = new Observable(compute())
+        this._compute = compute
+        this._observable = new Observable(this._compute())
         dependencies.forEach(observable => {
             if(
                 !(observable instanceof Observable)
                 && !(observable instanceof Computed)
             ) throw new Error('`dependencies` must be an array of Observable and Computed')
-            observable.subscribe(() => {
-                clearTimeout(this._timeoutId)
-                this._timeoutId = setTimeout(() => this._observable.set(compute()), 0)
-            })
+            if(dependencies.length === 1) {
+                observable.subscribe(() => this._update())
+            } else {
+                observable.subscribe(() => {
+                    clearTimeout(this._timeoutId)
+                    this._timeoutId = setTimeout(() => {
+                        this._update()
+                        this._timeoutId = undefined
+                    }, 0)
+                })
+            }
         })
     }
 
+    _update() {
+        this._observable.set(this._compute())
+    }
+
     get() {
+        if(typeof this._timeoutId !== "undefined") this._update()
         return this._observable.get()
     }
 
@@ -62,7 +76,7 @@ export class Computed {
 }
 
 /**
- * 
+ *
  * @param {*} v observed initial value
  * @returns {Observable}
  */
@@ -71,8 +85,8 @@ export function observable(v) {
 }
 
 /**
- * 
- * @param {Observable} observable 
+ *
+ * @param {Observable} observable
  * @returns {Computed} readonly version of the Observable
  */
 export function readonly(observable) {

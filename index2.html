@@ -540,7 +540,7 @@
       <span class="field__label">Text field</span>
       <input class="field__input" name="input" type="text" class="field" value="Mon text">
     </label>
-    <label class="field">
+    <label class="field" id="searchable">
       <span class="field__label">Select multiple field</span>
       <select class="field__input" name="select multiple" multiple>
         <option value="Afghanistan">Afghanistan</option>
@@ -796,8 +796,8 @@
     <label class="field">
       <input class="field__input" name="input" type="text" class="field" value="" placeholder="No label">
     </label>
-    <label class="field" data-searchable="true">
-      <span class="field__label">Searchable</span>
+    <label class="field" data-filterable="true">
+      <span class="field__label">Filterable</span>
       <select class="field__input" name="select" multiple>
         <option value="Afghanistan">Afghanistan</option>
         <option value="Åland Islands">Åland Islands</option>
@@ -1053,9 +1053,66 @@
       const input = field.querySelector('.field__input')
       if(!input) return
 
-      if(input.tagName === 'SELECT') new formComponents.SelectField(field)
-      else if (input.tagName === 'INPUT' || input.tagName === 'TEXTAREA') new formComponents.TextField(field)
+      if(input.tagName === 'SELECT') {
+        const config = {}
+        if(field.id === 'searchable') config.searchable = search
+        new formComponents.SelectField(field, config)
+      } else if (input.tagName === 'INPUT' || input.tagName === 'TEXTAREA') new formComponents.TextField(field)
     })
+
+    function search(query) {
+      return new Promise((resolve, reject) => {
+        fetch("https://photon.komoot.io/api/?q=" + query, {
+          headers: {
+            Accept: 'application/json'
+          }
+        }).then(response => {
+          if (!response.ok) throw new Error("HTTP error " + response.status);
+          return response.json();
+        }).then(json => {
+          if(!Array.isArray(json.features)) {
+            reject("Photon devrait retourné un objet avec une propriété features qui doit être un tableau")
+            return
+          }
+
+          const options = []
+
+          json.features.forEach(feature => {
+            if(typeof feature.properties === 'undefined') {
+              console.warn("feature skipped because no properties provided")
+              return
+            }
+
+            const props = feature.properties
+
+            if(typeof props.osm_type === 'undefined') {
+              console.warn("feature skipped because no osm_type provided")
+              return
+            }
+
+            if(typeof props.osm_id === 'undefined') {
+              console.warn("feature skipped because no osm_id provided")
+              return
+            }
+            const value = props.osm_type + props.osm_id
+
+            let label = null
+
+            if(typeof props.name !== 'undefined') {
+              label = props.name
+            }
+
+            options.push({
+              id: value,
+              value,
+              label
+            })
+          })
+
+          resolve(options)
+        })
+      })
+    }
   </script>
 </body>
 

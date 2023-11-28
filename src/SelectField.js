@@ -14,6 +14,7 @@ export function SelectField(container, config) {
     }
 
     this.defaultConfig = {
+        filterable: false,
         searchable: false
     }
 
@@ -22,19 +23,18 @@ export function SelectField(container, config) {
     this.baseField = undefined
     this.select = undefined
     this.options = undefined
-    this.nativeOptions = undefined
-    this.filtredOptionsIndexes = undefined
-    this.filtredOptions = undefined
+    this.nativeOptionsElements = {}
+    this.optionsElements = {}
+    this.filterQuery = undefined
     this.isOpen = undefined
     this.navIndex = undefined
     this.isNavigating = undefined
-    this.optionsElements = {}
     this.selectedDisplay = undefined
     this.dropdown = undefined
     this.optionsContainer = undefined
     this.typedTextTimoutId = undefined
     this.lastTypedText = ""
-    this.searchInput = undefined
+    this.queryInput = undefined
 
     this.init = function () {
         // Merge defaults with user set config
@@ -46,24 +46,25 @@ export function SelectField(container, config) {
             throw new Error("the container should contains a 'input.field__input' element with a type not equal to radio or checkbox")
         }
 
-        if(this.container.dataset.searchable && (!config || typeof config.searchable === 'undefined')) {
-            this.config.searchable = true
+        if(this.config.searchable && typeof this.config.searchable !== 'function') {
+            console.error('searchable configuration must be a function that accept a query and return options in the folowing format : {?id: string, value: string, ?label: string}')
+            this.config.searchable = false
+        }
+
+        // cant be searchable and filterable at once
+        if(!this.config.searchable && this.container.dataset.filterable && (!config || typeof config.filterable === 'undefined')) {
+            this.config.filterable = true
         }
 
         this.baseField = new BaseField(this.container)
         this.baseField.value.set([])
         this.isOpen = new Observable(false)
-        this.navIndex = new Observable(0)
+        this.navIndex = new Observable(undefined)
         this.isNavigating = new Observable(true)
         this.options = new Observable([])
-        this.filtredOptionsIndexes = new Observable(null)
-        this.filtredOptions = new Computed(() => {
-            if(this.filtredOptionsIndexes.get() === null) return this.options.get()
-            return this.filtredOptionsIndexes.get().map(id => this.options.get()[id])
-        }, [this.filtredOptionsIndexes])
-
-        const optionsIds = new Computed(() => this.options.get().map(option => option.id), [this.options])
-        this.nativeOptions = {}
+        this.filterQuery = new Observable("")
+        this.filteredOptions = new Computed(() => this.options.get().filter(v => v.matchFilter.get()), [this.options, this.filterQuery])
+        this.optionsIds = new Computed(() => this.options.get().map(option => option.id), [this.options])
 
         this.selectedDisplay = createElement('div', {
             classList: ['field__selected'],
@@ -79,7 +80,7 @@ export function SelectField(container, config) {
         })
 
         this.selectedDisplay.tabIndex = 0
-        if(!this.config.searchable) this.optionsContainer.tabIndex = 0
+        if(!this.queryInput) this.optionsContainer.tabIndex = 0
         this.dropdownFloater = new Floater(this.container, this.dropdown)
 
         this.container.addEventListener('keydown', this.onKeydown)
@@ -109,16 +110,14 @@ export function SelectField(container, config) {
         const tempOptions = []
         for (let i = 0; i < this.select.options.length; i++) {
             const nativeOption = this.select.options[i];
-            const option = this.createOption({
+
+            tempOptions.push({
                 label: nativeOption.textContent,
                 value: nativeOption.value
             })
-
-            tempOptions.push(option)
-            this.nativeOptions[option.id] = nativeOption
         }
 
-        this.options.set(tempOptions)
+        this.setOptions(tempOptions)
 
         this.container.appendChild(this.selectedDisplay)
         this.dropdown.appendChild(this.optionsContainer)
@@ -134,7 +133,7 @@ export function SelectField(container, config) {
             this.container.classList.toggle('isOpen', this.isOpen.get())
             this.dropdownFloater.isVisible.set(this.isOpen.get())
         if(this.isOpen.get()) {
-            const focusTarget = this.config.searchable ? this.searchInput : this.optionsContainer
+            const focusTarget = this.queryInput || this.optionsContainer
             focusTarget.focus()
         }
         })
@@ -149,17 +148,32 @@ export function SelectField(container, config) {
             }
         })
 
-        optionsIds.subscribe(() => {
+        this.optionsIds.subscribe((ids) => {
             this.optionsContainer.textContent = ""
-            for (let i = 0; i < optionsIds.get().length; i++) {
-                const optionId = optionsIds.get()[i];
-                const optionElement = this.createOptionElement(optionId)
+            this.select.textContent = ""
+            for (let i = 0; i < ids.length; i++) {
+                const optionElement = this.createOptionElement(i)
+                const nativeOptionElement = this.createNativeOptionElement(i)
 
-                this.optionsContainer.appendChild(optionElement)
+                if(optionElement) this.optionsContainer.appendChild(optionElement)
+                if(nativeOptionElement) this.select.appendChild(nativeOptionElement)
+            }
+
+            // cleanup
+
+            for (const id in this.optionsElements) {
+                if(ids.includes[id]) continue
+                delete this.optionsElements[id]
+            }
+
+            for (const id in this.nativeOptionElement) {
+                if(ids.includes[id]) continue
+                delete this.nativeOptionElement[id]
             }
         })
 
         if(this.config.searchable) this.initSearchable()
+        else if(this.config.filterable) this.initFilterable()
     }
 
     this.createOptionElement = function (optionId) {
@@ -175,25 +189,18 @@ export function SelectField(container, config) {
             children: [option.label],
         })
 
-        const nativeOption = this.nativeOptions[optionId]
-
-        this.baseField.value.subscribe(() => {
-            const isSelected = this.baseField.value.get().includes(option.id)
-            optionElement.classList.toggle('isSelected', isSelected)
-            if(nativeOption) nativeOption.selected = isSelected
-            if (isSelected && !this.select.multiple) this.scrolloptionElementIntoView(optionElement)
+        option.selected.subscribe(() => {
+            optionElement.classList.toggle('isSelected', option.selected.get())
+            if (option.selected.get() && !this.select.multiple) this.scrolloptionElementIntoView(optionElement)
         })
 
-        this.navIndex.subscribe(() => {
-            const isActiveOption = this.select.multiple && option.id === this.navIndex.get()
-            optionElement.classList.toggle('isActive', isActiveOption)
-
-            if (isActiveOption && this.select.multiple) this.scrolloptionElementIntoView(optionElement)
+        option.active.subscribe(() => {
+            optionElement.classList.toggle('isActive', option.active.get())
+            if (option.active.get() && this.select.multiple) this.scrolloptionElementIntoView(optionElement)
         })
 
-        this.filtredOptionsIndexes.subscribe(value => {
-            const isFiltredOption = value === null || value.includes(option.id)
-            optionElement.classList.toggle('hide', !isFiltredOption)
+        option.matchFilter.subscribe(() => {
+            optionElement.classList.toggle('hide', !option.matchFilter.get())
         })
 
         optionElement.addEventListener('click', e => {
@@ -202,14 +209,67 @@ export function SelectField(container, config) {
             if (!this.select.multiple) this.selectedDisplay.focus()
         })
 
+        this.optionsElements[option.id] = optionElement
         return optionElement
+    }
+
+    this.createNativeOptionElement = function(optionIndex) {
+
+        const option = this.options.get()[optionIndex]
+
+        if (!option) return
+
+        if (this.nativeOptionsElements[option.id]) return this.nativeOptionsElements[option.id]
+
+        const nativeOptionElement = createElement('option', {
+            properties: { value: option.value },
+            children: [option.label],
+        })
+
+        option.selected.subscribe(() => {
+            nativeOptionElement.selected = option.selected.get()
+        })
+
+        this.nativeOptionsElements[option.id] = nativeOptionElement
+        return nativeOptionElement
     }
 
     this.createOption = function ({ label, value, id }) {
         if (!id && typeof id !== "number") id = this.uid.get()
         if (typeof id !== "number" && typeof id !== "string") throw new Error('id must be a string, a number or a "falsy" value')
 
-        return { id, label, value }
+        const normalizedLabel = this.normalizeString(label)
+        const index = new Computed(() => this.optionsIds.get().indexOf(id), [this.optionsIds])
+
+        const option = {
+            id,
+            index: index,
+            label,
+            value,
+            selected: new Computed(() => this.baseField.value.get().includes(id), [this.baseField.value]),
+            active: new Computed(() => {
+                if(this.select.multiple && index.get() === this.navIndex.get()) {
+                    console.log(index.get(), id, this.options.get())
+                }
+                return this.select.multiple && index.get() === this.navIndex.get()
+            }, [this.navIndex]),
+            matchFilter: new Computed(() => {
+                return this.filterQuery.get() === "" || normalizedLabel.indexOf(this.filterQuery.get()) > -1
+            }, [this.filterQuery]),
+        }
+
+        return option
+    }
+
+    this.setOptions = function (options) {
+        const tempOptions = []
+        for (let i = 0; i < options.length; i++) {
+            tempOptions.push(this.createOption({...options[i], index: i}))
+        }
+
+        console.log(tempOptions);
+
+        this.options.set(tempOptions)
     }
 
     this.onKeydown = e => {
@@ -232,37 +292,43 @@ export function SelectField(container, config) {
             e.preventDefault()
             this.isNavigating.set(true)
 
-            let currentIndex = undefined
-            let optionsLength = this.options.get().length
-
-            currentIndex = this.baseField.value.get()[this.baseField.value.get().length - 1]
+            let currentIndex
 
             if (this.select.multiple) currentIndex = this.navIndex.get()
 
-            if(this.filtredOptionsIndexes.get() !== null) {
-                currentIndex = this.filtredOptionsIndexes.get().indexOf(currentIndex)
-                optionsLength = this.filtredOptionsIndexes.get().length
+            if(typeof currentIndex === "undefined") {
+                let lastOptionSelectedId = this.baseField.value.get()[this.baseField.value.get().length - 1]
+
+                if(typeof lastOptionSelectedId !== 'undefined') {
+                    let lastOptionSelected = this.filteredOptions.get().find(option => option.id === lastOptionSelectedId)
+                    if(lastOptionSelected && typeof lastOptionSelected.index.get() === 'number') currentIndex = lastOptionSelected.index.get()
+                }
             }
 
             if (typeof currentIndex === "undefined") {
                 currentIndex = 0
             } else {
+                const optionsLength = this.filteredOptions.get().length
                 if (e.key === "ArrowUp") currentIndex--
                 else if (e.key === "ArrowDown") currentIndex++
                 if (currentIndex < 0) currentIndex = optionsLength - 1
                 else if (currentIndex > optionsLength - 1) currentIndex = 0
             }
 
-            let realIndex = this.filtredOptionsIndexes.get() === null
-                ? currentIndex
-                : this.filtredOptionsIndexes.get()[currentIndex]
+            const option = this.filteredOptions.get()[currentIndex]
 
-            if (this.select.multiple) this.navIndex.set(realIndex)
-            else this.selectOption(realIndex)
+            if(option) {
+                if(this.select.multiple) {
+                    if(typeof option.index.get() === 'number') this.navIndex.set(option.index.get())
+                } else {
+                    if(["string", "number"].includes(typeof option.id)) this.selectOption(option.id)
+                }
+            }
+
         } else if (e.key.length === 1) {
             // e.key.length === 1 : on verifie que le charactère est imprimable (ignore esc, tab, vermaj, maj, f1, f2...)
 
-            if(this.searchInput && this.baseField.focusedElement.get() === this.searchInput) return
+            if(this.queryInput && this.baseField.focusedElement.get() === this.queryInput) return
 
             if(this.select.multiple) this.isOpen.set(true)
 
@@ -271,7 +337,7 @@ export function SelectField(container, config) {
 
             const findedOption = this.findFirstMatchingOption(this.lastTypedText)
 
-            if (findedOption && typeof findedOption.id === "number") {
+            if (findedOption && ["string", "number"].includes(typeof findedOption.id)) {
                 if (this.select.multiple) this.navIndex.set(findedOption.id)
                 else this.selectOption(findedOption.id)
             }
@@ -289,7 +355,7 @@ export function SelectField(container, config) {
     }
 
     this.findMatchingOptions = function (query, options, first) {
-        query = removeDiacritics(query.trim().toLowerCase())
+        query = this.normalizeString(query)
         const finded = []
         for (let i = 0; i < options.length; i++) {
             const option = options[i];
@@ -305,17 +371,12 @@ export function SelectField(container, config) {
         return finded
     }
 
-    this.findFirstMatchingOption = function (query) {
-        return this.findMatchingOptions(query, this.filtredOptions.get(), true)
+    this.normalizeString = function (string) {
+        return removeDiacritics(string.trim().toLowerCase().replace(/\s{2,}/, ' '))
     }
 
-    this.filterOptions = function (query) {
-        if(query.trim() === '') {
-            this.filtredOptionsIndexes.set(null)
-            return
-        }
-        const finded = this.findMatchingOptions(query, this.options.get())
-        this.filtredOptionsIndexes.set(finded.map(option => option.id))
+    this.findFirstMatchingOption = function (query) {
+        return this.findMatchingOptions(query, this.filteredOptions.get(), true)
     }
 
     this.scrolloptionElementIntoView = function (optionElement) {
@@ -354,24 +415,51 @@ export function SelectField(container, config) {
         }, []).join(', ')
     }
 
-    this.initSearchable = function() {
-        this.searchInput = createElement('input', {
+    this.setupQueryInput = function() {
+        const mode = "dropdown"
+        this.queryInput = createElement('input', {
             classList: ['field__search'],
             properties: { type: 'search' }
         })
-        this.dropdown.prepend(this.searchInput)
 
-        this.optionsContainer.addEventListener('pointerdown', e => {
-            e.preventDefault()
-            e.stopPropagation()
-        })
+        if(mode === "dropdown") {
+            this.dropdown.prepend(this.queryInput)
 
-        const onInput = () => {
-            this.filterOptions(this.searchInput.value)
+            this.optionsContainer.addEventListener('pointerdown', e => {
+                // permet d'evier que "queryInput" perdent le focus au clic
+                // solution temporaire à changer au plus vite
+                // il faut trouver une meilleure façon de gérer le focus
+                e.preventDefault()
+                e.stopPropagation()
+            })
         }
 
-        this.searchInput.addEventListener('change', onInput)
-        this.searchInput.addEventListener('input', onInput)
+        if(typeof this.queryInput === HTMLInputElement) {
+            throw new Error("Internal Error : this.queryInput should be an HTMLInputElement , got '" + typeof this.queryInput + "'")
+        }
+
+        return this.queryInput
+    }
+
+    this.initFilterable = function() {
+        const queryInput = this.setupQueryInput()
+        const onInput = () => {
+            this.filterQuery.set(this.normalizeString(queryInput.value))
+        }
+
+        queryInput.addEventListener('change', onInput)
+        queryInput.addEventListener('input', onInput)
+    }
+
+    this.initSearchable = function() {
+        const queryInput = this.setupQueryInput()
+        const onInput = async () => {
+            const results = await this.config.searchable(queryInput.value)
+            this.setOptions(results)
+        }
+
+        queryInput.addEventListener('change', onInput)
+        queryInput.addEventListener('input', onInput)
     }
 
     this.uid = (function () {
