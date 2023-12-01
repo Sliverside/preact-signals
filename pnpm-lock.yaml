@@ -20,6 +20,9 @@ devDependencies:
   '@rollup/plugin-terser':
     specifier: ^0.4.4
     version: 0.4.4(rollup@4.4.1)
+  bi-directional-map:
+    specifier: ^1.0.0
+    version: 1.0.0
   rollup:
     specifier: ^4.4.1
     version: 4.4.1
@@ -1488,6 +1491,10 @@ packages:
       '@babel/helper-define-polyfill-provider': 0.4.3(@babel/core@7.23.3)
     transitivePeerDependencies:
       - supports-color
+    dev: true
+
+  /bi-directional-map@1.0.0:
+    resolution: {integrity: sha512-Iv7ItdjFg+VUJNfac5Wul7GaKPR4v99SN3GEzKttwqD61mFUsKLPhXK4QGvEihzogYE8vqA3Xrh80ZD02n6ZLw==}
     dev: true
 
   /binary-extensions@2.2.0:

@@ -10,6 +10,7 @@
     "@rollup/plugin-babel": "^6.0.4",
     "@rollup/plugin-node-resolve": "^15.2.3",
     "@rollup/plugin-terser": "^0.4.4",
+    "bi-directional-map": "^1.0.0",
     "rollup": "^4.4.1",
     "rollup-plugin-scss": "^4.0.0",
     "sass": "^1.69.5",

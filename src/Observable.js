@@ -1,3 +1,5 @@
+import { extend } from "./helpers"
+
 export class Observable {
     _observed
     _listeners = new Set()
@@ -17,9 +19,14 @@ export class Observable {
         return this._observed
     }
 
-    subscribe(fn) {
+    subscribe(fn, options) {
         if (typeof fn !== 'function') throw new Error('`fn` parameter must be a function')
-        fn(this._observed, this._observed)
+        
+        options = extend({
+            autoRun: true
+        }, options || {})
+
+        if(options.autoRun) fn(this._observed, this._observed)
         this._listeners.add(fn)
         return () => this.unsubscribe(fn)
     }
@@ -30,20 +37,27 @@ export class Observable {
 }
 
 export class Computed {
+    _defautConfig = {
+        lazy: 'auto'
+    }
 
     _observable
     _timeoutId
     _compute
 
-    constructor(compute, dependencies) {
+    constructor(compute, dependencies, config) {
         this._compute = compute
         this._observable = new Observable(this._compute())
+        const _config = extend(this._defautConfig, config);
+
+        if(_config.lazy === 'auto') _config.lazy = dependencies.length !== 1 
+
         dependencies.forEach(observable => {
             if(
                 !(observable instanceof Observable)
                 && !(observable instanceof Computed)
             ) throw new Error('`dependencies` must be an array of Observable and Computed')
-            if(dependencies.length === 1) {
+            if(_config.lazy === false) {
                 observable.subscribe(() => this._update())
             } else {
                 observable.subscribe(() => {

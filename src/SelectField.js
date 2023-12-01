@@ -1,7 +1,8 @@
 import { BaseField } from "./BaseField";
-import { createElement, removeDiacritics, extend } from "./helpers";
+import { createElement, removeDiacritics, extend, debounce } from "./helpers";
 import { Observable, Computed } from "./Observable";
 import { Floater } from "./Floater";
+import { BiDirectionalMap } from "bi-directional-map/dist/index";
 
 export function SelectField(container, config) {
 
@@ -15,17 +16,25 @@ export function SelectField(container, config) {
 
     this.defaultConfig = {
         filterable: false,
-        searchable: false
+        searchable: false,
+        queryInputMode: 'root', // root, dropdown
+        count: true,
     }
+
+    this.eventTypes = [
+        'change'
+    ]
 
     this.config = undefined
     this.container = undefined
     this.baseField = undefined
     this.select = undefined
     this.options = undefined
+    this.selectedOptions = undefined
     this.nativeOptionsElements = {}
     this.optionsElements = {}
     this.filterQuery = undefined
+    this.searchQuery = undefined
     this.isOpen = undefined
     this.navIndex = undefined
     this.isNavigating = undefined
@@ -62,13 +71,37 @@ export function SelectField(container, config) {
         this.navIndex = new Observable(undefined)
         this.isNavigating = new Observable(true)
         this.options = new Observable([])
+        this.selectedOptions = new Observable([])
         this.filterQuery = new Observable("")
+        this.searchQuery = new Observable("")
         this.filteredOptions = new Computed(() => this.options.get().filter(v => v.matchFilter.get()), [this.options, this.filterQuery])
-        this.optionsIds = new Computed(() => this.options.get().map(option => option.id), [this.options])
+        this.optionsIds = new Computed(() => new BiDirectionalMap(this.options.get().map(option => [option.id, option])), [this.options])
 
-        this.selectedDisplay = createElement('div', {
+        this.selectedDisplay = createElement('button', {
             classList: ['field__selected'],
-            children: [' ']
+            properties: {
+                type: 'button'
+            }
+        })
+
+        this.selectedDisplayValue = createElement('span', {
+            classList: ['field__selectedValue'],
+            children: [' '],
+        })
+
+        this.selectedDisplay.appendChild(this.selectedDisplayValue)
+
+        this.deselectAllButton = createElement('button', {
+            classList: ['field__deselectAll'],
+            children: ['X'],
+            properties: {
+                type: 'button'
+            }
+        })
+
+        this.deselectAllButton.addEventListener('click', () => {
+            this.deselectAll()
+            this.close()
         })
 
         this.dropdown = createElement('div', {
@@ -79,21 +112,15 @@ export function SelectField(container, config) {
             classList: ['field__options', this.select.multiple ? 'multiple' : 'simple']
         })
 
-        this.selectedDisplay.tabIndex = 0
-        if(!this.queryInput) this.optionsContainer.tabIndex = 0
         this.dropdownFloater = new Floater(this.container, this.dropdown)
 
-        this.container.addEventListener('keydown', this.onKeydown)
-
-        this.baseField.focusedElement.subscribe(focusedElement => {
-            if(focusedElement === this.selectedDisplay) this.isOpen.set(false)
-        })
+        this.container.addEventListener('keydown', this.onKeydownContainer)
+        this.selectedDisplay.addEventListener('keydown', this.onKeydownSelectedDisplay)
+        this.dropdown.addEventListener('keydown', this.onKeydownDropdown)
 
         this.selectedDisplay.addEventListener('pointerdown', e => {
-            if(e.target === this.selectedDisplay) {
-                e.preventDefault()
-                this.isOpen.set(!this.isOpen.get())
-            }
+            e.preventDefault()
+            this.isOpen.get() ? this.close() : this.open()
         })
 
         const onOptionsContainerPointermove = () => { this.isNavigating.set(false) }
@@ -120,60 +147,137 @@ export function SelectField(container, config) {
         this.setOptions(tempOptions)
 
         this.container.appendChild(this.selectedDisplay)
+        if(this.config.count === true) this.setupContDisplay()
+        this.container.appendChild(this.deselectAllButton)
         this.dropdown.appendChild(this.optionsContainer)
         this.container.appendChild(this.dropdown)
-        this.select.style.display = "none"
+
+        this.select.classList.add('field__hiddenSelect')
         this.select.tabIndex = -1
 
-        this.baseField.isFocus.subscribe(() => {
-            if(!this.baseField.isFocus.get()) this.isOpen.set(false)
-        })
+        // dans le cas ou le navigateur met le focus sur le select (lors de la validation native)
+        this.select.addEventListener('keydown', this.onKeydownSelectedDisplay)
 
         this.isOpen.subscribe(() => {
             this.container.classList.toggle('isOpen', this.isOpen.get())
-            this.dropdownFloater.isVisible.set(this.isOpen.get())
-        if(this.isOpen.get()) {
-            const focusTarget = this.queryInput || this.optionsContainer
-            focusTarget.focus()
-        }
         })
 
-        this.baseField.value.subscribe(() => {
+        this.baseField.isFocus.subscribe(() => {
+            if(!this.baseField.isFocus.get()) {
+                this.close(false);
+            }
+        })
+
+        this.selectedOptions.subscribe(() => {
             const displayValue = this.renderSelectedDisplay()
-            this.selectedDisplay.innerHTML = displayValue === "" ? "&nbsp;" : displayValue
+            this.selectedDisplayValue.innerHTML = displayValue === "" ? "&nbsp;" : displayValue
             this.selectedDisplay.title = displayValue
 
-            if(this.baseField.value.get().length < 1) {
+            if(this.selectedOptions.get().length < 1) {
                 this.select.selectedIndex = -1
             }
         })
 
         this.optionsIds.subscribe((ids) => {
+            this.navIndex.set(undefined)
             this.optionsContainer.textContent = ""
-            this.select.textContent = ""
-            for (let i = 0; i < ids.length; i++) {
-                const optionElement = this.createOptionElement(i)
-                const nativeOptionElement = this.createNativeOptionElement(i)
+            this.optionsContainer.scrollTop = 0
 
-                if(optionElement) this.optionsContainer.appendChild(optionElement)
-                if(nativeOptionElement) this.select.appendChild(nativeOptionElement)
+            if(ids.size === 0) {
+                this.optionsContainer.textContent = "no options"
+            } else {
+                for (let i = 0; i < ids.size; i++) {
+                    const optionElement = this.createOptionElement(i)
+    
+                    if(optionElement) this.optionsContainer.appendChild(optionElement)
+                }
             }
 
             // cleanup
 
             for (const id in this.optionsElements) {
-                if(ids.includes[id]) continue
+                if(ids.hasKey[id]) continue
                 delete this.optionsElements[id]
             }
 
             for (const id in this.nativeOptionElement) {
-                if(ids.includes[id]) continue
+                if(ids.hasKey[id]) continue
                 delete this.nativeOptionElement[id]
             }
         })
 
+        this.selectedOptions.subscribe(options => {
+            this.select.textContent = ""
+            options.forEach(option => {
+                this.select.appendChild(createElement('option', {
+                    properties: {
+                        value: option.value,
+                        selected: true
+                    }
+                }))
+            });
+        })
+
         if(this.config.searchable) this.initSearchable()
         else if(this.config.filterable) this.initFilterable()
+
+        if(this.queryInput) {
+            if(this.select.multiple) this.selectedOptions.subscribe(() => this.clearQueryInput())
+            else this.isOpen.subscribe(isOpen => { if(!isOpen) this.clearQueryInput() })
+        }
+
+        this.optionsContainer.tabIndex = this.queryInput ? -1 : 0
+
+        if(this.queryInput && this.config.queryInputMode === "root" && this.select.multiple) {
+            const tagsContainer = createElement('div', {
+                classList: ['field__tags']
+            })
+
+            this.dropdown.prepend(tagsContainer)
+
+            this.selectedOptions.subscribe(options => {
+                tagsContainer.textContent = ""
+
+                options.forEach(option => {
+
+                    const valueElement = createElement('span', {
+                        classList: ['field__tagValue'],
+                        children: [option.label]
+                    })
+
+                    const deselectButton = createElement('button', {
+                        properties: { type: 'button' },
+                        classList: ['field__tagDeselect'],
+                        children: ['X']
+                    })
+
+                    deselectButton.addEventListener('click', () => this.deselectOption(option.id))
+                    
+                    tagsContainer.appendChild(createElement('span', {
+                        classList: ['field__tag'],
+                        children: [valueElement, deselectButton]
+                    }))
+                })
+            })
+        }
+    }
+
+    this.close = function (autofocus) {
+        autofocus = typeof autofocus === 'undefined' ? true : autofocus
+        if(this.isOpen.get()) {
+            this.isOpen.set(false)
+            if(autofocus) this.selectedDisplay.focus()
+            this.dropdownFloater.close()
+        }
+    }
+
+    this.open = function () {
+        if(!this.isOpen.get()) {
+            this.isOpen.set(true)
+            this.dropdownFloater.open()
+            const focusTarget = this.queryInput || this.optionsContainer
+            focusTarget.focus()
+        }
     }
 
     this.createOptionElement = function (optionId) {
@@ -186,8 +290,9 @@ export function SelectField(container, config) {
 
         const optionElement = createElement('div', {
             classList: ['field__option'],
-            children: [option.label],
         })
+
+        optionElement.innerHTML = option.labelHTML || option.label
 
         option.selected.subscribe(() => {
             optionElement.classList.toggle('isSelected', option.selected.get())
@@ -206,53 +311,28 @@ export function SelectField(container, config) {
         optionElement.addEventListener('click', e => {
             e.preventDefault()
             this.toggleOption(option.id)
-            if (!this.select.multiple) this.selectedDisplay.focus()
+            if (!this.select.multiple) this.close()
         })
 
         this.optionsElements[option.id] = optionElement
         return optionElement
     }
 
-    this.createNativeOptionElement = function(optionIndex) {
-
-        const option = this.options.get()[optionIndex]
-
-        if (!option) return
-
-        if (this.nativeOptionsElements[option.id]) return this.nativeOptionsElements[option.id]
-
-        const nativeOptionElement = createElement('option', {
-            properties: { value: option.value },
-            children: [option.label],
-        })
-
-        option.selected.subscribe(() => {
-            nativeOptionElement.selected = option.selected.get()
-        })
-
-        this.nativeOptionsElements[option.id] = nativeOptionElement
-        return nativeOptionElement
-    }
-
-    this.createOption = function ({ label, value, id }) {
+    this.createOption = function ({ label, labelHTML, value, id }) {
         if (!id && typeof id !== "number") id = this.uid.get()
         if (typeof id !== "number" && typeof id !== "string") throw new Error('id must be a string, a number or a "falsy" value')
 
         const normalizedLabel = this.normalizeString(label)
-        const index = new Computed(() => this.optionsIds.get().indexOf(id), [this.optionsIds])
+        const index = new Computed(() => [...this.optionsIds.get().keys()].indexOf(id), [this.optionsIds])
 
         const option = {
             id,
             index: index,
             label,
+            labelHTML,
             value,
             selected: new Computed(() => this.baseField.value.get().includes(id), [this.baseField.value]),
-            active: new Computed(() => {
-                if(this.select.multiple && index.get() === this.navIndex.get()) {
-                    console.log(index.get(), id, this.options.get())
-                }
-                return this.select.multiple && index.get() === this.navIndex.get()
-            }, [this.navIndex]),
+            active: new Computed(() => this.select.multiple && index.get() === this.navIndex.get(), [this.navIndex]),
             matchFilter: new Computed(() => {
                 return this.filterQuery.get() === "" || normalizedLabel.indexOf(this.filterQuery.get()) > -1
             }, [this.filterQuery]),
@@ -263,94 +343,123 @@ export function SelectField(container, config) {
 
     this.setOptions = function (options) {
         const tempOptions = []
+        const ids = []
         for (let i = 0; i < options.length; i++) {
-            tempOptions.push(this.createOption({...options[i], index: i}))
+            const id = options[i].id
+            if(['string', 'number'].includes(typeof id)) {
+                if(ids.includes(id)) {
+                    console.warn('an option with the same id (' + id + ') already exist')
+                    continue
+                } else {
+                    ids.push(id)
+                }
+            }
+            tempOptions.push(this.createOption(options[i]))
         }
-
-        console.log(tempOptions);
 
         this.options.set(tempOptions)
     }
 
-    this.onKeydown = e => {
+    this.onKeydownSelectedDisplay = e => {
+        if (! [" ", "Enter", "ArrowDown", "ArrowUp"].includes(e.key)) return
+        e.preventDefault()
+        this.isOpen.get() ? this.close() : this.open()
+        return
+    }
 
-        if (!this.isOpen.get() && [" ", "Enter", "ArrowDown", "ArrowUp"].includes(e.key)) {
+    this.onKeydownContainer = e => {
+        if (this.isOpen.get() && e.key === 'Escape') {
             e.preventDefault()
-            this.isOpen.set(true)
-            return
-        } else if (this.isOpen.get() && ["Escape"].includes(e.key)) {
-            e.preventDefault()
-            this.selectedDisplay.focus()
+            this.close()
             return
         }
 
+        // si le queryInput est focus on ne fait rien
+        if(this.queryInput && document.activeElement === this.queryInput) return
+
+        // on verifie que le charactère est imprimable et n'est pas un espace (ignore espace, esc, tab, vermaj, maj, f1, f2...)
+        if(e.key.length !== 1 || e.key === ' ') return
+
+        if(this.select.multiple) this.open()
+
+        this.isNavigating.set(true)
+        this.lastTypedText += e.key
+
+        const findedOption = this.findFirstMatchingOption(this.lastTypedText)
+
+        if (findedOption) {
+            if (this.select.multiple) this.navIndex.set(findedOption.id)
+            else this.selectOption(findedOption.id)
+        }
+
+        if (this.typedTextTimoutId) {
+            clearTimeout(this.typedTextTimoutId)
+            this.typedTextTimoutId = undefined
+        }
+
+        this.typedTextTimoutId = setTimeout(() => {
+            this.lastTypedText = ""
+        }, 700);
+    }
+
+    this.onKeydownDropdown = e => {
+
         if ([" ", "Enter"].includes(e.key)) {
+            // si le queryInput est focus est que la touche est espace on ne fait rien
+            if(this.queryInput && document.activeElement === this.queryInput && e.key === " ") return
+
             e.preventDefault()
-            if(this.select.multiple) this.toggleOption(this.navIndex.get())
-            else this.selectedDisplay.focus()
-        } else if (["ArrowDown", "ArrowUp"].includes(e.key)) {
-            e.preventDefault()
-            this.isNavigating.set(true)
+            if(this.select.multiple) {
+                const option = this.options.get()[this.navIndex.get()]
+                if(option) this.toggleOption(option.id)
+            } else this.close()
 
-            let currentIndex
+            return
+        }
 
-            if (this.select.multiple) currentIndex = this.navIndex.get()
+        if (!["ArrowDown", "ArrowUp"].includes(e.key)) return
 
-            if(typeof currentIndex === "undefined") {
-                let lastOptionSelectedId = this.baseField.value.get()[this.baseField.value.get().length - 1]
+        e.preventDefault()
+        this.isNavigating.set(true)
 
-                if(typeof lastOptionSelectedId !== 'undefined') {
-                    let lastOptionSelected = this.filteredOptions.get().find(option => option.id === lastOptionSelectedId)
-                    if(lastOptionSelected && typeof lastOptionSelected.index.get() === 'number') currentIndex = lastOptionSelected.index.get()
-                }
+        let absoluteCurrentIndex
+        
+        if (this.select.multiple) absoluteCurrentIndex = this.navIndex.get()
+        
+        if(typeof absoluteCurrentIndex === "undefined") {
+            let lastOptionSelected = this.selectedOptions.get()[this.selectedOptions.get().length - 1]
+            if(lastOptionSelected) absoluteCurrentIndex = lastOptionSelected.index.get()
+        }
+
+        let currentIndex
+
+        if(typeof absoluteCurrentIndex !== "undefined") {
+            const currentOption = this.options.get()[absoluteCurrentIndex]
+            if(currentOption) {
+                const relativeIndex = this.filteredOptions.get().indexOf(currentOption)
+                if(relativeIndex > -1) currentIndex = relativeIndex
             }
+        }
 
-            if (typeof currentIndex === "undefined") {
-                currentIndex = 0
+        if(typeof currentIndex !== "undefined") {
+            const optionsLength = this.filteredOptions.get().length
+            if (e.key === "ArrowUp") currentIndex--
+            else if (e.key === "ArrowDown") currentIndex++
+            if (currentIndex < 0) currentIndex = optionsLength - 1
+            else if (currentIndex > optionsLength - 1) currentIndex = 0
+        } else {
+            currentIndex = 0
+        }
+
+        const option = this.filteredOptions.get()[currentIndex]
+
+        if(option) {
+            const filteredOptionsIndex = this.filteredOptions.get().indexOf(option)
+            if(this.select.multiple) {
+                if(typeof option.index.get() === 'number') this.navIndex.set(option.index.get())
             } else {
-                const optionsLength = this.filteredOptions.get().length
-                if (e.key === "ArrowUp") currentIndex--
-                else if (e.key === "ArrowDown") currentIndex++
-                if (currentIndex < 0) currentIndex = optionsLength - 1
-                else if (currentIndex > optionsLength - 1) currentIndex = 0
+                this.selectOption(option.id)
             }
-
-            const option = this.filteredOptions.get()[currentIndex]
-
-            if(option) {
-                if(this.select.multiple) {
-                    if(typeof option.index.get() === 'number') this.navIndex.set(option.index.get())
-                } else {
-                    if(["string", "number"].includes(typeof option.id)) this.selectOption(option.id)
-                }
-            }
-
-        } else if (e.key.length === 1) {
-            // e.key.length === 1 : on verifie que le charactère est imprimable (ignore esc, tab, vermaj, maj, f1, f2...)
-
-            if(this.queryInput && this.baseField.focusedElement.get() === this.queryInput) return
-
-            if(this.select.multiple) this.isOpen.set(true)
-
-            this.isNavigating.set(true)
-            this.lastTypedText += e.key
-
-            const findedOption = this.findFirstMatchingOption(this.lastTypedText)
-
-            if (findedOption && ["string", "number"].includes(typeof findedOption.id)) {
-                if (this.select.multiple) this.navIndex.set(findedOption.id)
-                else this.selectOption(findedOption.id)
-            }
-
-            if (this.typedTextTimoutId) {
-                clearTimeout(this.typedTextTimoutId)
-                this.typedTextTimoutId = undefined
-            }
-
-            this.typedTextTimoutId = setTimeout(() => {
-                this.lastTypedText = ""
-            }, 700);
-
         }
     }
 
@@ -397,41 +506,71 @@ export function SelectField(container, config) {
 
     this.selectOption = function (id) {
         if (this.baseField.value.get().includes(id)) return
-        if (this.select.multiple) this.baseField.value.set([...this.baseField.value.get(), id])
-        else this.baseField.value.set([id])
+
+        const option = this.optionsIds.get().getValue(id)
+
+        if(!option) return
+
+        if (this.select.multiple) {
+            this.baseField.value.set([...this.baseField.value.get(), id])
+            this.selectedOptions.set([...this.selectedOptions.get(), option])
+        } else {
+            this.baseField.value.set([id])
+            this.selectedOptions.set([option])
+        }
     }
 
     this.deselectOption = function (id) {
         if (!this.baseField.value.get().includes(id)) return
-        this.baseField.value.set(this.baseField.value.get().filter((value) => value !== id))
+
+        const option = this.optionsIds.get().getValue(id)
+
+        if(!option) return
+
+        this.baseField.value.set(this.baseField.value.get().filter((optionId) => optionId !== id))
+        this.selectedOptions.set(this.selectedOptions.get().filter((option) => option.id !== id))
+    }
+
+    this.deselectAll = function () {
+        this.baseField.value.set([])
+        this.selectedOptions.set([])
     }
 
     this.renderSelectedDisplay = function () {
-        if (!this.baseField.value.get().length === 0) return ""
-        return this.baseField.value.get().reduce((acc, curr) => {
-            const option = this.options.get()[curr]
-            if (option) acc.push(option.label)
+        if (!this.selectedOptions.get().length === 0) return ""
+        return this.selectedOptions.get().reduce((acc, option) => {
+            acc.push(option.label)
             return acc
         }, []).join(', ')
     }
 
     this.setupQueryInput = function() {
-        const mode = "dropdown"
+        const queryInputContainer = createElement('div', { classList: ['field__queryInputContainer'] })
+        const queryInputLoader = createElement('span', { classList: ['field__queryInputLoader'] })
         this.queryInput = createElement('input', {
-            classList: ['field__search'],
+            classList: ['field__input', 'field__queryInput'],
             properties: { type: 'search' }
         })
 
-        if(mode === "dropdown") {
-            this.dropdown.prepend(this.queryInput)
+        queryInputContainer.appendChild(this.queryInput)
+        queryInputContainer.appendChild(queryInputLoader)
 
-            this.optionsContainer.addEventListener('pointerdown', e => {
-                // permet d'evier que "queryInput" perdent le focus au clic
-                // solution temporaire à changer au plus vite
-                // il faut trouver une meilleure façon de gérer le focus
-                e.preventDefault()
-                e.stopPropagation()
-            })
+        this.optionsContainer.addEventListener('pointerdown', e => {
+            // permet d'evier que "queryInput" perdent le focus au clic
+            // solution temporaire à changer au plus vite
+            // il faut trouver une meilleure façon de gérer le focus
+            e.preventDefault()
+            e.stopPropagation()
+            this.queryInput.focus()
+        })
+
+        if(this.config.queryInputMode === "dropdown") {
+            this.container.classList.add('field--queryInputDropdown')
+            this.dropdown.prepend(queryInputContainer)
+        } else if(this.config.queryInputMode === "root") {
+            this.container.classList.add('field--queryInputRoot')
+            this.container.prepend(queryInputContainer)
+            this.queryInput.addEventListener('keydown', this.onKeydownDropdown)
         }
 
         if(typeof this.queryInput === HTMLInputElement) {
@@ -453,13 +592,48 @@ export function SelectField(container, config) {
 
     this.initSearchable = function() {
         const queryInput = this.setupQueryInput()
-        const onInput = async () => {
-            const results = await this.config.searchable(queryInput.value)
+
+        const debouncedSearch = debounce(async () => {
+            const results = await this.config.searchable(this.searchQuery.get())
             this.setOptions(results)
+            this.container.classList.remove('isQuerying')
+        }, 300)
+
+        this.searchQuery.subscribe(() => {
+            this.container.classList.add('isQuerying')
+            debouncedSearch()
+        })
+
+        const onInput = () => {
+            this.searchQuery.set(queryInput.value)
         }
 
         queryInput.addEventListener('change', onInput)
         queryInput.addEventListener('input', onInput)
+    }
+
+    this.clearQueryInput = function() {
+        if(this.config.searchable) {
+            this.setOptions([])
+            this.searchQuery.set('')
+        } else if(this.config.filterable) {
+            this.filterQuery.set('')
+        }
+        this.queryInput.value = ''
+    }
+
+    this.setupContDisplay = function () {
+        const countDisplay = createElement('span', {
+            classList: ['field__count'],
+        })
+
+        this.baseField.value.subscribe(value => {
+            const mustDisplayCount = value.length > 1
+            this.container.classList.toggle('hasCount', mustDisplayCount)
+            countDisplay.innerText = mustDisplayCount ? value.length : ''
+        })
+
+        this.selectedDisplay.appendChild(countDisplay)
     }
 
     this.uid = (function () {
@@ -472,5 +646,23 @@ export function SelectField(container, config) {
     })();
 
     this.init()
-    return this.baseField
+    return Object.defineProperties({}, {
+        on: {
+            value: (eventType, listener) => {
+                if(!this.eventTypes.includes(eventType)) {
+                    throw new Error("eventType must be one of this values : " + this.eventTypes.join(', ') + " | given value : " + eventType)
+                }
+    
+                if(typeof listener !== 'function') throw new Error('listener must be a function')
+    
+                if(eventType === 'change') {
+                    this.selectedOptions.subscribe(selectedOptions => {
+                        if(this.select.multiple) listener(selectedOptions) 
+                        else listener(selectedOptions.length > 0 ? selectedOptions[0] : null)
+                    }, { autoRun: false })
+                }
+            },
+            writable: false
+        }
+    })
 }

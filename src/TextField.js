@@ -27,8 +27,6 @@ export function TextField (container) {
 
         this.baseField = new BaseField(container)
 
-        this.baseField.addFocusableElement(this.input)
-
         const onInput = () => {
             this.baseField.value.set(this.input.value)
         }

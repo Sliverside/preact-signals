@@ -18,15 +18,15 @@ export default [
   //   ],
   // },
   {
-    input: 'main2.js',
+    input: 'formComponents.js',
     output: {
-      file: 'dist/main2.js',
+      file: 'dist/formComponents.js',
       format: 'iife',
       name: 'formComponents',
       sourcemap: true
     },
     plugins: [
-      scss({ fileName: 'main.css' }),
+      scss({ fileName: 'formComponents.css' }),
       nodeResolve(),
       babel({
         babelHelpers: "bundled",

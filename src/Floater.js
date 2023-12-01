@@ -1,4 +1,4 @@
-import { Observable } from "./Observable"
+import { Observable, readonly } from "./Observable"
 import { computePosition, flip, size, autoUpdate } from "@floating-ui/dom"
 import { extend } from "./helpers"
 
@@ -22,7 +22,7 @@ export function Floater(reference, floating, config) {
     }
 
     this.config = undefined
-    this.isVisible = undefined
+    this.isOpen = undefined
     this.floating = undefined
     this.reference = undefined
     this.middleware = []
@@ -30,7 +30,7 @@ export function Floater(reference, floating, config) {
     this.init = function () {
         // Merge defaults with user set config
         this.config = extend(this.defaultConfig, config);
-        this.isVisible = new Observable(false)
+        this.isOpen = new Observable(false)
         this.reference = reference
         this.floating = floating
 
@@ -59,16 +59,16 @@ export function Floater(reference, floating, config) {
         }
 
 
-        this.isVisible.subscribe(() => {
-            this.reference.classList.toggle('isFloaterVisible', this.isVisible.get())
-            this.floating.classList.toggle('isVisible', this.isVisible.get())
+        this.isOpen.subscribe(() => {
+            this.reference.classList.toggle('isFloaterOpen', this.isOpen.get())
+            this.floating.classList.toggle('isOpen', this.isOpen.get())
 
             if (typeof autoUpdateCleanup === "function") {
                 autoUpdateCleanup()
                 autoUpdateCleanup = undefined
             }
 
-            if (this.isVisible.get()) {
+            if (this.isOpen.get()) {
                 autoUpdateCleanup = autoUpdate(
                     this.reference,
                     this.floating,
@@ -102,9 +102,27 @@ export function Floater(reference, floating, config) {
             get: () => this.floating,
             set() { throw new Error("floating is a read only property") },
         },
-        isVisible: {
-            get: () => this.isVisible,
-            set() { throw new Error("isVisible is an Observable, use isVisible.set method") },
+        isOpen: {
+            get: () => readonly(this.isOpen),
+            set() { throw new Error("isOpen is an Observable, use isOpen.set method") },
         },
+        open: {
+            value: () => {
+                return this.isOpen.set(true)
+            },
+            readonly: true
+        },
+        close: {
+            value: () => {
+                return this.isOpen.set(false)
+            },
+            readonly: true
+        },
+        toggleOpen: {
+            value: (force) => {
+                return this.isOpen.set(typeof force === 'undefined' ? !this.isOpen.get() : force)
+            },
+            readonly: true
+        }
     })
 }

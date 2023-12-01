@@ -30,31 +30,39 @@ export function BaseField (container) {
             return this.value.get() ? this.value.get().length > 0 : false
         }, [this.value])
         this.focusedElement = new Observable(null)
-        this.isFocus = new Computed(() => {
-            return !!this.focusedElement.get()
-        }, [this.focusedElement])
+        this.isFocus = new Observable(false)
         this.focusableElements = []
 
         this.isFiled.subscribe(() => this.container.classList.toggle('isFiled', this.isFiled.get()))
         this.isFocus.subscribe(() => this.container.classList.toggle('isFocus', this.isFocus.get()))
 
-        new Promise(() => {
-            setTimeout(() => {
-                focusable(container, { displayCheck: 'none' })
-                    .forEach(el => {
-                        this.addFocusableElement(el)
-                    })
-            }, 10)
-        })
-    }
+        const closeOnInteractOut = (e) => {
+            switch (true) {
+                case e && e.type && e.type === "pointerdown":
+                    if(e.target) if(this.container.contains(e.target)) return
+                    else break;
+                case this.container.contains(document.activeElement): return
+            }
+            this.isFocus.set(false)
+        }
 
-    this.addFocusableElement = function(element) {
-        if(!(element instanceof HTMLElement)) throw new Error('element must be an instance of HTMLElement')
-        if(this.focusableElements.indexOf(element) !== -1) return false
-        this.focusableElements.push(element)
-        if(element.tabIndex < 0) element.tabIndex = 0
-        element.addEventListener('focus', () => this.focusElement(element), false)
-        element.addEventListener('blur', () => this.blurElement(element), false)
+        const handleFocusin = () => {
+            this.isFocus.set(true)
+        }
+
+        this.isFocus.subscribe(isFocus => {
+            if(isFocus) {
+                document.addEventListener('pointerdown', closeOnInteractOut, false)
+                document.addEventListener('focusin', closeOnInteractOut, false)
+                this.container.removeEventListener('focusout', closeOnInteractOut)
+                this.container.removeEventListener('focusin', handleFocusin)
+            } else {
+                document.removeEventListener('pointerdown', closeOnInteractOut)
+                document.removeEventListener('focusin', closeOnInteractOut)
+                this.container.addEventListener('focusout', closeOnInteractOut, false)
+                this.container.addEventListener('focusin', handleFocusin, false)
+            }
+        });
     }
 
     this.focusElement = function(element) {
@@ -90,10 +98,6 @@ export function BaseField (container) {
         isFocus: {
             get: () => readonly(this.isFocus),
             set() { throw new Error("isFocus is an Observable, use isFocus.set method") },
-        },
-        addFocusableElement: {
-            value: (element) => true,
-            writable: false
         },
         focusedElement: {
             get: () => readonly(this.focusedElement),

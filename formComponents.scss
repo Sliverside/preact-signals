@@ -1,0 +1,368 @@
+@use "sass:math";
+
+$bgColor: #fff;
+$borderRadius: 2px;
+
+@keyframes rotate {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+@mixin loader($size: 60px, $inline: false, $color: #fff) {
+  @if $inline == false {
+    display: block;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    margin-top: - math.div($size, 2);
+    margin-left: - math.div($size, 2);
+  } @else {
+    display: inline-block;
+    vertical-align: middle;
+  }
+  width: $size;
+  height: $size;
+  border: 1px solid $color;
+  border-left-color: transparent;
+  border-radius: 100%;
+  animation: rotate infinite 1000ms linear;
+}
+
+.wide {
+  grid-column: span 2;
+}
+
+$fieldPadding: 10px;
+$fieldLabelWidth: calc(100% - #{2 * $fieldPadding});
+$fieldLabelHorizontalPadding: 5px;
+$fieldLabelHorizontalMargin: $fieldPadding - $fieldLabelHorizontalPadding;
+
+
+.floater {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 10;
+  visibility: hidden;
+  &.isOpen {
+    visibility: visible;
+  }
+}
+
+.field {
+  position: relative;
+  display: block;
+  font-size: 15px;
+  font-family: arial;
+  min-width: 0;
+  color: #333;
+  &, *, *::before, *::after { box-sizing: border-box }
+}
+
+.field__label,
+.field__input,
+.field__selected {
+  border: 1px solid #ccc;
+}
+
+.field {
+  .field__input,
+  .field__selected {
+    width: 100%;
+  }
+}
+
+.field__input,
+.field__selected {
+  background-color: $bgColor;
+  border-radius: $borderRadius;
+  margin: 0;
+  padding: $fieldPadding;
+}
+
+.field__label {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  border-color: transparent;
+  margin: 0 $fieldLabelHorizontalMargin;
+  padding: $fieldPadding $fieldLabelHorizontalPadding;
+  max-width: $fieldLabelWidth;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #666;
+  pointer-events: none;
+
+  transition-property: top, font-size, padding, background-color;
+  transition-duration: 100ms;
+}
+
+.field__selected {
+  cursor: pointer;
+  text-align: left;
+  display: flex;
+  align-items: center;
+  gap: 0.4em;
+}
+
+.field__selected {
+  padding-right: $fieldPadding + 15px;
+}
+
+.field__selected::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: $fieldPadding;
+  height: 100%;
+  background-image: url(assets/dropdown-icon.svg);
+  background-position: right $fieldPadding;
+  background-repeat: no-repeat;
+  background-size: 9px;
+  width: 10px;
+  background-position: 50%;
+  transform: scaleY(1);
+  transition: transform 150ms;
+}
+
+.field.isOpen .field__selected::after {
+  transform: scaleY(-1);
+}
+
+.field__selectedValue {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  line-height: 1.3;
+}
+
+.field__count {
+  display: none;
+  &::before {
+    content: '(';
+  }
+  &::after {
+    content: ')';
+  }
+}
+
+.field.hasCount {
+  .field__count {
+    display: block;
+  }
+}
+
+.field__deselectAll {
+  display: none;
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  right: 10px;
+  opacity: 0;
+  pointer-events: none;
+  background-color: #fff;
+  border: 1px solid #ccc;
+  border-radius: $borderRadius;
+  padding: 2px 4px;
+  line-height: 1;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.field.isFiled .field__deselectAll {
+  display: block;
+}
+
+.field:hover,
+.field.isFocus {
+  .field__deselectAll {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+.field__dropdown {
+  background-color: $bgColor;
+  border-radius: $borderRadius;
+  border: 1px solid #666;
+  border-top: 0;
+  box-shadow: 0 0 4px rgba(#000, 0.4);
+  min-width: 100%;
+  width: max-content;
+}
+
+.field__queryInputContainer {
+  position: relative;
+}
+
+.field__queryInput {
+  position: relative;
+  background-color: transparent;
+}
+
+.field__queryInputLoader {
+  @include loader(14px, false, #333);
+  visibility: hidden;
+  left: auto;
+  right: 0;
+  margin-left: auto;
+  margin-right: 5px;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.field.isOpen.isQuerying {
+  .field__queryInput {
+    padding-right: 20px;
+  }
+  .field__queryInputLoader {
+    visibility: visible;
+  }
+}
+
+.field.field--queryInputRoot {
+  .field__selected {
+    padding-right: $fieldPadding;
+  }
+  .field__selected::after {
+    display: none;
+  }
+
+  .field__queryInputContainer {
+    display: none;
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+  }
+
+  .field__queryInput {
+    width: 100%;
+    height: 100%;
+  }
+
+  &.isOpen {
+    .field__queryInputContainer {
+      display: block;
+    }
+    .field__deselectAll,
+    .field__selected {
+      visibility: hidden;
+    }
+  }
+}
+
+.field.field--queryInputDropdown {
+  .field__queryInput {
+    z-index: 1;
+  }
+}
+
+.field__tags {
+  display: flex;
+  flex-wrap: wrap;
+  width: min-content;
+  min-width: 100%;
+  gap: 6px;
+  padding: 6px;
+  margin-bottom: 5px;
+  &:empty {
+    display: none;
+  }
+}
+
+.field__tag {
+  display: inline-block;
+  background-color: rgba(0, 0, 0, 0.1);
+  font-size: 10px;
+  border-radius: $borderRadius;
+}
+
+.field__tagValue {
+  padding: 2px 0 2px 2px;
+  vertical-align: middle;
+}
+
+.field__tagDeselect {
+  padding: 2px 2px 2px 4px;
+  background-color: transparent;
+  border: none;
+  vertical-align: middle;
+  cursor: pointer;
+}
+
+.field__options {
+  position: relative;
+  width: max-content;
+  width: 100%;
+  max-height: 300px;
+  overflow: auto;
+  padding: 3px;
+  scrollbar-color: rgba(#000, 0.2) rgba(#000, 0.1);
+  scrollbar-width: thin;
+}
+
+.field__option {
+  position: relative;
+  border-radius: 4px;
+  text-align: left;
+  background-color: transparent;
+  padding: $fieldPadding - 3px;
+  border: 3px solid $bgColor;
+  cursor: pointer;
+  padding-right: 2em;
+}
+
+.field__option.isSelected{
+  background-color: rgba(#000, 0.1);
+  &::after {
+    position: absolute;
+    right: 0.8em;
+    content: "✓";
+  }
+}
+
+.field__option.hide {
+  display: none;
+}
+
+.field__options.isNavigating .field__option.isActive,
+.field__options.isNotNavigating .field__option:hover {
+  background-color: rgba(#000, 0.2);
+}
+
+.field.isFocus {
+  .field__label {
+    opacity: 0.7;
+  }
+}
+
+.field.isFiled,
+.field.field--queryInputRoot.isOpen {
+  .field__label {
+    top: 0;
+    transform: translateY(-50%);
+    background-color: $bgColor;
+    padding-top: 0;
+    padding-bottom: 0;
+    font-size: 12px;
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+.field__hiddenSelect {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  opacity: 0;
+}
