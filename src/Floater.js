@@ -1,5 +1,5 @@
 import { Observable, readonly } from "./Observable"
-import { computePosition, flip, size, autoUpdate } from "@floating-ui/dom"
+import { computePosition, flip, size, shift, autoUpdate } from "@floating-ui/dom"
 import { extend } from "./helpers"
 
 export function Floater(reference, floating, config) {
@@ -18,6 +18,7 @@ export function Floater(reference, floating, config) {
         middleware: {
             flip: true,
             size: true,
+            shift: true,
         }
     }
 
@@ -43,6 +44,12 @@ export function Floater(reference, floating, config) {
             this.middleware.push(flip({
                 padding: 10,
                 crossAxis: false
+            }))
+        }
+        
+        if (this.config.middleware.shift) {
+            this.middleware.push(shift({
+                padding: 10,
             }))
         }
 

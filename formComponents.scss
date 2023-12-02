@@ -282,6 +282,8 @@ $fieldLabelHorizontalMargin: $fieldPadding - $fieldLabelHorizontalPadding;
   background-color: rgba(0, 0, 0, 0.1);
   font-size: 10px;
   border-radius: $borderRadius;
+  border: none;
+  cursor: pointer;
 }
 
 .field__tagValue {
@@ -291,10 +293,7 @@ $fieldLabelHorizontalMargin: $fieldPadding - $fieldLabelHorizontalPadding;
 
 .field__tagDeselect {
   padding: 2px 2px 2px 4px;
-  background-color: transparent;
-  border: none;
   vertical-align: middle;
-  cursor: pointer;
 }
 
 .field__options {
@@ -357,7 +356,7 @@ $fieldLabelHorizontalMargin: $fieldPadding - $fieldLabelHorizontalPadding;
   }
 }
 
-.field__hiddenSelect {
+.field__input--hidden {
   position: absolute;
   top: 0;
   left: 0;

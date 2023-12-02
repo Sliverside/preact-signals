@@ -90,8 +90,41 @@ export function extend(src, props) {
   return src;
 }
 
-export function isHidden (node) {
+export function isHidden(node) {
   // offsetParent being null will allow detecting cases where an element is invisible or inside an invisible element,
   // as long as the element does not use position: fixed. For them, their visibility has to be checked directly as well.
   return node.offsetParent === null || getComputedStyle(node).visibility === 'hidden'
+}
+
+/**
+ * 
+ * @param {number | string} number 
+ * @param {string} [delimiter] 
+ * @param {string} [decimalSeparator] 
+ * @returns 
+ */
+export function formatNumber(number, delimiter, decimalSeparator) {
+  if (typeof number === "undefined") return false;
+  delimiter = typeof delimiter === 'string' ? delimiter : ' '
+  decimalSeparator = typeof decimalSeparator === 'string' ? decimalSeparator : '.'
+
+  number = parseFloat(number);
+  if (isNaN(number)) return false;
+  let i = 0;
+  let numberFormated = "";
+  const numberInteger = Math.floor(number);
+  const numberIntegerStr = numberInteger.toString();
+  const numberDecimals = Math.round((number * 100) - (numberInteger * 100));
+  const remainder = numberIntegerStr.length % 3;
+
+  do {
+    const nbChar = (i == 0 && remainder > 0) ? remainder : 3;
+    numberFormated += numberIntegerStr.substring(i, i + nbChar);
+    i += nbChar;
+    if (numberIntegerStr.length > i) numberFormated += " ";
+  } while (i < numberIntegerStr.length);
+
+  if (numberDecimals > 0) numberFormated += '.' + numberDecimals.toString();
+
+  return numberFormated;
 }
