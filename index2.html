@@ -303,8 +303,8 @@
   </select>
     <label class="field">
       <span class="field__label">Select field</span>
-      <select class="field__input" name="select" multiple>
-        <option value="Afghanistan">Afghanistan</option>
+      <select class="field__input" name="select">
+        <option value="Afghanistan" data-json='{"test": "ok"}'>Afghanistan</option>
         <option value="Åland Islands">Åland Islands</option>
         <option value="Albania" selected>Albania</option>
         <option value="Algeria" selected>Algeria</option>
@@ -832,6 +832,7 @@
       if(input.tagName === 'SELECT') {
         const config = {}
         if(field.id === 'searchable') config.searchable = search
+        config.filterable = typeof field.dataset.filterable !== 'undefined'
         new formComponents.SelectField(field, config).on('change', console.log)
       } else if (input.tagName === 'INPUT' || input.tagName === 'TEXTAREA') new formComponents.TextField(field)
     })

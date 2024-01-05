@@ -19,7 +19,8 @@ export function Floater(reference, floating, config) {
             flip: true,
             size: true,
             shift: true,
-        }
+        },
+        strategy: 'fixed',
     }
 
     this.config = undefined
@@ -89,11 +90,13 @@ export function Floater(reference, floating, config) {
     this.computePosition = () => {
         computePosition(this.reference, this.floating, {
             placement: this.config.placement,
-            middleware: this.middleware
+            middleware: this.middleware,
+            strategy: this.config.strategy,
         }).then(({ x, y }) => {
             Object.assign(this.floating.style, {
                 left: `${x}px`,
                 top: `${y}px`,
+                minWidth: this.config.strategy === 'fixed' ? `${this.reference.offsetWidth}px` : '',
             });
         })
     }

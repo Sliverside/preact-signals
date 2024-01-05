@@ -43,7 +43,7 @@ $fieldLabelHorizontalMargin: $fieldPadding - $fieldLabelHorizontalPadding;
 
 
 .floater {
-  position: absolute;
+  position: fixed;
   top: 0;
   left: 0;
   z-index: 10;
@@ -187,13 +187,18 @@ $fieldLabelHorizontalMargin: $fieldPadding - $fieldLabelHorizontalPadding;
 }
 
 .field__dropdown {
+  display: flex;
+  flex-direction: column;
   background-color: $bgColor;
   border-radius: $borderRadius;
   border: 1px solid #666;
   border-top: 0;
   box-shadow: 0 0 4px rgba(#000, 0.4);
-  min-width: 100%;
   width: max-content;
+  overflow: hidden;
+  > * {
+    flex-grow: 0;
+  }
 }
 
 .field__queryInputContainer {
@@ -305,6 +310,15 @@ $fieldLabelHorizontalMargin: $fieldPadding - $fieldLabelHorizontalPadding;
   padding: 3px;
   scrollbar-color: rgba(#000, 0.2) rgba(#000, 0.1);
   scrollbar-width: thin;
+  &:empty {
+    display: none;
+  }
+}
+
+.field__optionsMessages {
+  width: min-content;
+  min-width: 100%;
+  padding: 3px;
 }
 
 .field__option {

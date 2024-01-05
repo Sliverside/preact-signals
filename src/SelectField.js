@@ -1,8 +1,8 @@
-import { BaseField } from "./BaseField";
-import { createElement, removeDiacritics, extend, debounce } from "./helpers";
-import { Observable, Computed } from "./Observable";
-import { Floater } from "./Floater";
-import { BiDirectionalMap } from "bi-directional-map/dist/index";
+import { BaseField } from "./BaseField"
+import { createElement, removeDiacritics, extend, debounce } from "./helpers"
+import { Observable, Computed } from "./Observable"
+import { Floater } from "./Floater"
+import { BiDirectionalMap } from "bi-directional-map/dist/index"
 
 export function SelectField(container, config) {
 
@@ -21,6 +21,14 @@ export function SelectField(container, config) {
         count: true,
         defaultSelected: false,
         allowDeselect: true,
+        texts: {
+            filtrablePlaceholder: 'Filter options...',
+            filtrableNoOptionsFound: 'No options match your filter',
+            searchablePlaceholder: 'Search options...',
+            searchableQueryEmpty: 'Please enter at least one character to show options',
+            searchableNoOptionsFound: 'No options match your search',
+            noOptionsFound: 'No options available',
+        }
     }
 
     this.eventTypes = [
@@ -50,8 +58,6 @@ export function SelectField(container, config) {
     this.queryInput = undefined
 
     this.init = function () {
-        // Merge defaults with user set config
-        this.config = extend(this.defaultConfig, config);
         this.container = container
         this.select = this.container.querySelector('select.field__input')
 
@@ -59,14 +65,22 @@ export function SelectField(container, config) {
             throw new Error("the container should contains a 'input.field__input' element with a type not equal to radio or checkbox")
         }
 
+        // Merge defaults with user set config
+        this.config = extend(this.defaultConfig, config)
+
         if (this.config.searchable && typeof this.config.searchable !== 'function') {
             console.error('searchable configuration must be a function that accept a query and return options in the folowing format : {?id: string, value: string, ?label: string}')
             this.config.searchable = false
         }
 
-        // cant be searchable and filterable at once
-        if (!this.config.searchable && this.container.dataset.filterable && (!config || typeof config.filterable === 'undefined')) {
-            this.config.filterable = true
+        if (this.config.searchable && this.config.filterable) {
+            console.error('can\'t be searchable and filterable at once')
+            this.config.filterable = false
+        }
+
+        if(!['undefined', 'boolean'].includes(typeof this.config.filterable)) {
+            console.error('filterable configuration must be a boolean')
+            this.config.filterable = false
         }
 
         this.baseField = new BaseField(this.container)
@@ -119,6 +133,10 @@ export function SelectField(container, config) {
             classList: ['field__options', this.select.multiple ? 'multiple' : 'simple']
         })
 
+        this.optionsContainerMessages = createElement('div', {
+            classList: ['field__optionsMessages']
+        })
+
         this.dropdownFloater = new Floater(this.container, this.dropdown)
 
         this.container.addEventListener('keydown', this.onKeydownContainer)
@@ -143,14 +161,29 @@ export function SelectField(container, config) {
 
         const tempOptions = []
         for (let i = 0; i < this.select.options.length; i++) {
-            const nativeOption = this.select.options[i];
+            const nativeOption = this.select.options[i]
+
+            let jsonData = nativeOption.dataset.json
+
+            if( typeof jsonData !== 'undefined') {
+                if(jsonData.trim() === '') jsonData = undefined
+                else {
+                    try {
+                        jsonData = JSON.parse(jsonData)
+                    } catch (error) {
+                        jsonData = undefined
+                        console.error('unable to parse data-json Attribue', error)
+                    }
+                }
+            }
 
             tempOptions.push({
                 label: nativeOption.textContent,
                 value: nativeOption.value,
                 selected: this.config.defaultSelected
                     ? nativeOption.selected
-                    : nativeOption.hasAttribute('selected')
+                    : nativeOption.hasAttribute('selected'),
+                data: jsonData
             })
         }
 
@@ -173,9 +206,7 @@ export function SelectField(container, config) {
         })
 
         this.baseField.isFocus.subscribe(() => {
-            if (!this.baseField.isFocus.get()) {
-                this.close(false);
-            }
+            if (!this.baseField.isFocus.get()) this.close(false)
         })
 
         this.selectedOptions.subscribe(() => {
@@ -193,9 +224,11 @@ export function SelectField(container, config) {
             this.optionsContainer.textContent = ""
             this.optionsContainer.scrollTop = 0
 
-            if (ids.size === 0) {
-                this.optionsContainer.textContent = "no options"
-            } else {
+            if(!this.config.filterable) {
+                this.displayEmptyMessage(ids.size)
+            }
+
+            if(ids.size > 0) {
                 for (let i = 0; i < ids.size; i++) {
                     const optionElement = this.createOptionElement(i)
 
@@ -225,11 +258,17 @@ export function SelectField(container, config) {
                         selected: true
                     }
                 }))
-            });
+            })
         })
 
         if (this.config.searchable) this.initSearchable()
-        else if (this.config.filterable) this.initFilterable()
+
+        if (this.config.filterable) {
+            this.initFilterable()
+            this.filteredOptions.subscribe(options => {
+                this.displayEmptyMessage(options.length)
+            })
+        }
 
         if (this.queryInput) {
             if (this.select.multiple) this.selectedOptions.subscribe(() => this.clearQueryInput())
@@ -337,7 +376,7 @@ export function SelectField(container, config) {
         return optionElement
     }
 
-    this.createOption = function ({ label, labelHTML, value, id }) {
+    this.createOption = function ({ label, labelHTML, value, id, data }) {
         if (typeof id !== "number" && typeof id !== "string") throw new Error('id must be a string, a number or a "falsy" value')
 
         const normalizedLabel = this.normalizeString(label)
@@ -349,6 +388,7 @@ export function SelectField(container, config) {
             label,
             labelHTML,
             value,
+            data,
             selected: new Computed(() => this.baseField.value.get().includes(id), [this.baseField.value]),
             active: new Computed(() => this.select.multiple && index.get() === this.navIndex.get(), [this.navIndex]),
             matchFilter: new Computed(() => {
@@ -378,7 +418,7 @@ export function SelectField(container, config) {
         }
 
 
-        this.options.set(tempOptions);
+        this.options.set(tempOptions)
         selectedIds.forEach(id => this.selectOption(id))
     }
 
@@ -410,7 +450,7 @@ export function SelectField(container, config) {
         const findedOption = this.findFirstMatchingOption(this.lastTypedText)
 
         if (findedOption) {
-            if (this.select.multiple) this.navIndex.set(findedOption.id)
+            if (this.select.multiple) this.navIndex.set(findedOption.index.get())
             else this.selectOption(findedOption.id)
         }
 
@@ -421,7 +461,7 @@ export function SelectField(container, config) {
 
         this.typedTextTimoutId = setTimeout(() => {
             this.lastTypedText = ""
-        }, 700);
+        }, 700)
     }
 
     this.onKeydownDropdown = e => {
@@ -491,7 +531,7 @@ export function SelectField(container, config) {
         query = this.normalizeString(query)
         const finded = []
         for (let i = 0; i < options.length; i++) {
-            const option = options[i];
+            const option = options[i]
             const valueToCompare = removeDiacritics(option.label.trim().substring(0, query.length).toLowerCase())
             if (valueToCompare === query) {
                 const result = option
@@ -608,6 +648,9 @@ export function SelectField(container, config) {
 
     this.initFilterable = function () {
         const queryInput = this.setupQueryInput()
+
+        queryInput.placeholder = this.txt('filtrablePlaceholder')
+
         const onInput = () => {
             this.filterQuery.set(this.normalizeString(queryInput.value))
         }
@@ -619,11 +662,26 @@ export function SelectField(container, config) {
     this.initSearchable = function () {
         const queryInput = this.setupQueryInput()
 
-        const debouncedSearch = debounce(async () => {
-            const results = await this.config.searchable(this.searchQuery.get())
-            this.setOptions(results)
-            this.container.classList.remove('isQuerying')
+        queryInput.placeholder = this.txt('searchablePlaceholder')
+
+        let abortControler = new AbortController()
+
+        const debouncedSearch = debounce(() => {
+            abortControler.abort()
+            abortControler = new AbortController()
+            
+            const signal = abortControler.signal
+
+            const setOptions = (options) => {
+                if(signal.aborted) return
+                this.setOptions(options)
+                this.container.classList.remove('isQuerying')
+            }
+
+            Promise.resolve(this.config.searchable(this.searchQuery.get()))
+                .then(setOptions)
         }, 300)
+
 
         this.searchQuery.subscribe(() => {
             this.container.classList.add('isQuerying')
@@ -662,17 +720,51 @@ export function SelectField(container, config) {
         this.selectedDisplay.appendChild(countDisplay)
     }
 
+    this.displayEmptyMessage = function (countOptions) {
+        let message = ''
+
+        if (countOptions === 0) {
+            if(this.config.searchable) {
+                message = this.txt(
+                    this.searchQuery.get() === ''
+                    ? 'searchableQueryEmpty'
+                    : 'searchableNoOptionsFound'
+                )
+            } else if (this.config.filterable) {
+                if(this.filterQuery.get() !== '') message = this.txt('filtrableNoOptionsFound')
+            } else {
+                message = this.txt('noOptionsFound')
+            }
+
+            this.optionsContainerMessages.textContent = message
+        }
+
+        if(message.trim() !== '') {
+            this.optionsContainer.appendChild(this.optionsContainerMessages)
+        } else if(
+            this.optionsContainerMessages.parentElement &&
+            this.optionsContainerMessages.parentElement === this.optionsContainer
+        ) {
+            this.optionsContainer.removeChild(this.optionsContainerMessages)
+        }
+    }
+
     this.getValue = function() {
         const cleanValue = this.selectedOptions.get()
-            .map(({id, value, label, labelHTML}) => ({
+            .map(({id, value, label, labelHTML, data}) => ({
                 id,
                 value,
                 label,
-                labelHTML
+                labelHTML,
+                data
             }))
 
         if (this.select.multiple) return cleanValue
         else return cleanValue.length > 0 ? cleanValue[0] : null
+    }
+
+    this.txt = function (key) {
+        return typeof this.config.texts[key] === 'string' ? this.config.texts[key] : key
     }
 
     this.uid = (function () {
@@ -682,7 +774,7 @@ export function SelectField(container, config) {
             get: () => '_select_option_' + (id++),
             reset: () => { id = 0 }
         }
-    })();
+    })()
 
     this.init()
     return Object.defineProperties({}, {
@@ -737,7 +829,7 @@ export function SelectField(container, config) {
             value: () => this.getValue(),
             writable: false
         },
-        setValue: {
+        setSelectedOptions: {
             value: (options) => {
                 const tempOptions = []
                 const tempIds = []
@@ -761,6 +853,27 @@ export function SelectField(container, config) {
                 this.baseField.value.set(tempIds)
                 this.selectedOptions.set(tempOptions)
             },
+            writable: false
+        },
+        setValue: {
+            value: (value) => {
+                const options = this.options.get().filter(option => value.includes(option.value))
+
+                this.baseField.value.set(options.map(opt => opt.id))
+                this.selectedOptions.set(options)
+            }
+        },
+        getOptions: {
+            value: () => {
+                return this.options.get()
+                    .map(({ id, value, label, labelHTML, data }) => {
+                        return { id, value, label, labelHTML, data }
+                    })
+            },
+            writable: false
+        },
+        setOptions: {
+            value: (options) => this.setOptions(options),
             writable: false
         }
     })
